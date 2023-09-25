@@ -133,6 +133,9 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         # else:
         #     self.success_counter = 0
 
+        if self.out_of_workspace:
+            self.logger.error("Out of workspace, failed: %s" % np.round(pose_error, 4))
+
         if self.step_count == self.steps_per_episode-1:
             self.logger.error("Max steps x episode reached, failed: %s" % np.round(pose_error, 4))
             self.robot_connection.unpause()

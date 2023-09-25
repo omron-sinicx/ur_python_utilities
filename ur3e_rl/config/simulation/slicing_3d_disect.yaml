@@ -75,6 +75,7 @@ ur3e_gym: #namespace
     uncertainty_std: [0.001, 0.0]
     random_target_pose: False
     target_pose: [0.138, 0.505, 0.126, 0.0, 0.7071068, 0.0, 0.7071068]
+    # z ? 0.12694
     
     # Reward parameters
     target_dims: [0,2,4]
