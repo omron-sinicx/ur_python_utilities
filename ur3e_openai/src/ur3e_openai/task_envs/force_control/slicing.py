@@ -13,8 +13,6 @@ from ur_gazebo.basic_models import get_button_model
 from ur_gazebo.model import Model
 
 import threading
-import tensorflow as tf
-
 
 def get_cl_range(range, curriculum_level):
     return [range[0], range[0] + (range[1] - range[0]) * curriculum_level]
@@ -58,18 +56,11 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         self.random_type = rospy.get_param(prefix + "/random_type", "uniform")
         self.cl_upgrade_level = rospy.get_param(prefix + "/cl_upgrade_level", 0.8)
         self.cl_downgrade_level = rospy.get_param(prefix + "/cl_downgrade_level", 0.2)
-        print(">>>>> ", self.random_type, self.curriculum_learning,
-              self.progressive_cl, self.reward_based_on_cl, " <<<<<<")
+        print(">>>>> ", self.random_type, self.curriculum_learning, self.progressive_cl, self.reward_based_on_cl, " <<<<<<")
 
         self.successes_threshold = rospy.get_param(prefix + "/successes_threshold", 0)
 
-        self.cost_cut_completion = rospy.get_param(prefix + "/cost_cut_completion", 0)
-        self.w_cut_completion = rospy.get_param(prefix + "/w_cut_completion", 0)
         self.total_steps = 0
-
-        self.mu1 = rospy.get_param(prefix + "/mu1", 0)
-        self.mu2 = rospy.get_param(prefix + "/mu2", 0.5)
-        self.mu3 = rospy.get_param(prefix + "/mu3", 1)
 
         self.spawn_interval = 5  # 10
         self.cumulated_dist = 0
@@ -107,7 +98,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
             t1.join()
             t2.join()
 
-        # self.ur3e_arm.zero_ft_sensor()
+        self.ur3e_arm.zero_ft_sensor()
         self.controller.reset()
         self.controller.start()
 
@@ -153,10 +144,6 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         self.current_board_pose = transformations.pose_euler_to_quat(block_pose)
         self.episode_count += 1
 
-        # print("step count " + str(self.total_steps))
-        # print("reset " + str(self.w_dist))
-        # print("max_steps = " + str(self.max_steps))
-
     def _is_done(self, observations):
         pose_error = np.abs(observations[:len(self.target_dims)]*self.max_distance)
 
@@ -166,8 +153,6 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         self.out_of_workspace = np.any(pose_error > self.workspace_limit)
 
         if self.out_of_workspace:
-            self.oow_counter += 1
-            tf.summary.scalar(name="Common/out_of_workspace_counter", data=self.oow_counter)
             self.logger.error("Out of workspace, failed: %s" % np.round(pose_error, 4))
 
         # If the end effector remains on the target pose for several steps. Then terminate the episode
@@ -181,8 +166,6 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
             self.controller.stop()
 
         if collision:
-            self.collision_counter += 1
-            tf.summary.scalar(name="Common/collision_counter", data=self.collision_counter)
             self.logger.error("Collision! pose: %s" % (pose_error))
 
         elif fail_on_reward:
@@ -195,7 +178,6 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         elif position_goal_reached and self.success_counter > self.successes_threshold:
             self.goal_reached = True
             self.goal_reached_counter += 1
-            tf.summary.scalar(name="Common/goal_reached_counter", data=self.goal_reached_counter)
             self.controller.stop()
             self.logger.green("goal reached: %s" % np.round(pose_error[:3], 4))
 
