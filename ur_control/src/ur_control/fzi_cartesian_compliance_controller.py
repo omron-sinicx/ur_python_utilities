@@ -263,7 +263,8 @@ class CompliantController(Arm):
     @switch_cartesian_controllers
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
-                                   auto_stop=True, func=None, scale_up_error=False, max_scale_error=None):
+                                   auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,
+                                   relative_to_ee=False):
 
         # Space out the trajectory points
         trajectory = trajectory.reshape((-1, 7))  # Assuming this format [x,y,z,qx,qy,qz,qw]
@@ -289,7 +290,7 @@ class CompliantController(Arm):
 
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
-            current_wrench = self.get_ee_wrench(hand_frame_control=True)
+            current_wrench = self.get_ee_wrench(base_frame_control=True)
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
