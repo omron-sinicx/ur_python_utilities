@@ -43,8 +43,8 @@ class FTsensor(object):
                            robot_urdf_package='o2ac_scene_description',
                            ee_link=tcp_link)
 
-        self.in_topic = '/b_bot/wrench/filtered'
-        self.out_topic = 'test/wrench'
+        self.in_topic = '/b_bot/wrench'
+        self.out_topic = '/test/wrench'
 
         rospy.loginfo("Publishing filtered FT to %s" % self.out_topic)
 
@@ -60,7 +60,7 @@ class FTsensor(object):
         if rospy.is_shutdown():
             return
         msg_out = WrenchStamped()
-        msg_out.wrench = conversions.to_wrench(self.arm.get_ee_wrench(hand_frame_control=True))
+        msg_out.wrench = conversions.to_wrench(self.arm.get_ee_wrench(base_frame_control=True))
         self.pub.publish(msg_out)
 
 def main():
