@@ -14,7 +14,7 @@ from ur_gazebo.model import Model
 from ur_gazebo.gazebo_spawner import GazeboModels
 
 import moveit_commander
-from o2ac_routines.robot_base import RobotBase
+from o2ac_robot_control.robot_base import RobotBase
 import tf
 
 import optuna
