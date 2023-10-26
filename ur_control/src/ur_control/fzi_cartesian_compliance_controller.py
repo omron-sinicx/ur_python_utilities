@@ -35,6 +35,12 @@ from geometry_msgs.msg import WrenchStamped, PoseStamped
 
 import dynamic_reconfigure.client
 
+def is_more_extreme(value, target):
+    if (np.all(value > 0) and np.all(target > 0)):
+        return np.all(value > target)
+    elif (np.all(value < 0) and np.all(target < 0)):
+        return np.all(value < target)
+    return False
 
 def convert_selection_matrix_to_parameters(selection_matrix):
     return {
@@ -264,7 +270,7 @@ class CompliantController(Arm):
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
                                    auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,
-                                   relative_to_ee=False):
+                                   relative_to_ee=False, stop_at_wrench=np.zeros(6)):
 
         # Space out the trajectory points
         trajectory = trajectory.reshape((-1, 7))  # Assuming this format [x,y,z,qx,qy,qz,qw]
@@ -276,6 +282,7 @@ class CompliantController(Arm):
         step_initial_time = rospy.get_time()
 
         result = DONE
+        stop_target_wrench_mask = stop_at_wrench != 0
 
         # Publish target wrench only once
         self.set_cartesian_target_wrench(target_wrench)
@@ -288,6 +295,7 @@ class CompliantController(Arm):
 
         rate = rospy.Rate(500)
 
+        rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
             current_wrench = self.get_ee_wrench(base_frame_control=True)
@@ -300,8 +308,9 @@ class CompliantController(Arm):
                     break
 
             # TODO: fix, it should check the sign of the target wrench and the current one too
-            if stop_on_target_force and np.all(np.abs(current_wrench)[target_wrench != 0] > np.abs(target_wrench)[target_wrench != 0]):
-                rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 3)) + ' Stopping!')
+            rospy.loginfo_throttle(1, 'F/T {}'.format(np.round(current_wrench[:3], 2)))
+            if stop_on_target_force and is_more_extreme(current_wrench[stop_target_wrench_mask], stop_at_wrench[stop_target_wrench_mask]):
+                rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 2)) + ' Stopping!')
                 result = STOP_ON_TARGET_FORCE
                 break
 
