@@ -330,8 +330,8 @@ class CompliantController(Arm):
         if auto_stop:
             # Stop moving
             # set position control only, then fix the pose to the current one
-            self.set_position_control_mode()
             self.set_cartesian_target_pose(self.end_effector())
+            self.set_position_control_mode()
             self.wait_for_robot_to_stop(wait_time=5)
 
         return result

@@ -46,7 +46,7 @@ signal.signal(signal.SIGINT, signal_handler)
 
 def move_joints():
     q = [1.3506, -1.6493, 1.9597, -1.8814, -1.5652, 1.3323]
-    q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    q = [1.4414, -1.7303, 2.145, -1.9863, -1.5656, 1.4397]
     arm.set_joint_positions(q, t=5, wait=True)
 
 
@@ -94,7 +94,7 @@ def move_force():
 
     ee = arm.end_effector()
 
-    target_force = [0, 5, 5, 0, 0, 0]  # express in the end_effector_link
+    target_force = [0, 0, 5, 0, 0, 0]  # express in the end_effector_link
     # transform = arm.end_effector(tip_link="b_bot_tool0")
     # tf = spalg.convert_wrench(target_force, transform)
     # print(transform)
@@ -130,6 +130,8 @@ def slicing():
 
 def admittance_control():
     """ Spring-mass-damper force control """
+    rospy.loginfo("START ADMITTANCE")
+
     arm.set_control_mode(mode="spring-mass-damper")
 
     ee = arm.end_effector()
@@ -138,11 +140,13 @@ def admittance_control():
                                    max_force_torque=[50., 50., 50., 5., 5., 5.], duration=10,
                                    stop_on_target_force=False)
 
+    rospy.loginfo("STOP ADMITTANCE")
 
 def free_drive():
+    rospy.loginfo("START FREE DRIVE")
     arm.zero_ft_sensor()
-
-    selection_matrix = [0., 0., 0.0, 1., 1., 1.]
+    arm.set_control_mode("parallel")
+    selection_matrix = [0., 0., 0., 1., 1., 1.]
     arm.update_selection_matrix(selection_matrix)
 
     pd_gains = [0.03, 0.03, 0.03, 1.0, 1.0, 1.0]
@@ -151,13 +155,14 @@ def free_drive():
     ee = arm.end_effector()
 
     target_force = np.zeros(6)
-    target_force[2] = -1
+    target_force[1] += 0
 
     res = arm.execute_compliance_control(ee, target_wrench=target_force,
                                          max_force_torque=[50., 50., 50., 5., 5., 5.], duration=15,
                                          stop_on_target_force=False)
     print(res)
     print("EE change", ee - arm.end_effector())
+    rospy.loginfo("STOP FREE DRIVE")
 
 
 def test():
@@ -232,6 +237,9 @@ def main():
                               ee_link=tcp_link,
                               ft_topic='wrench')
 
+    if args.move_joints:
+        move_joints()
+
     if args.move_cartesian:
         move_cartesian()
     if args.move_force:
@@ -242,8 +250,6 @@ def main():
         free_drive()
     if args.slicing:
         slicing()
-    if args.move_joints:
-        move_joints()
     if args.test:
         test()
     if args.teleoperation:

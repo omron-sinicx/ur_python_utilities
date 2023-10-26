@@ -45,7 +45,6 @@ def map_keyboard():
     def print_robot_state():
         print("Joint angles:", np.round(arm.joint_angles(), 4).tolist())
         print("EE Pose:", np.round(arm.end_effector(tip_link="b_bot_knife_center"), 5).tolist())
-        print("EE Twist:", np.round(arm.end_effector_twist(), 4))
         if arm.gripper:
             print("Gripper position:", np.round(arm.gripper.get_position(), 4))
 
