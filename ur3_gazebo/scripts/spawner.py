@@ -71,7 +71,7 @@ def place_collision_cube():
         pose = copy.copy(initial_pose)
         pose[1] -= 0.05*i
         model = Model("cube", pose, file_type="string", string_model=string_models[i], model_id="cube%s" % i, 
-                    reference_frame="o2ac_ground")
+                    reference_frame="osx_ground")
         models.append(model)
     spawner.load_models(models)
 

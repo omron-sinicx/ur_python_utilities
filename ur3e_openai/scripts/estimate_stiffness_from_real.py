@@ -14,7 +14,7 @@ from ur_gazebo.model import Model
 from ur_gazebo.gazebo_spawner import GazeboModels
 
 import moveit_commander
-from o2ac_robot_control.robot_base import RobotBase
+from osx_robot_control.robot_base import RobotBase
 import tf
 
 import optuna
@@ -91,7 +91,7 @@ def slice_button(arm: CompliantController, erp, cfm,):
     # print(arm.joint_angles())
     # Spawn the button with some stiffness parameter
     string_model = get_button_model(erp=erp, cfm=cfm, base_mass=1.)
-    box_model = Model("block", button_initial_pose, file_type="string", string_model=string_model, model_id="target_block", reference_frame="o2ac_ground")
+    box_model = Model("block", button_initial_pose, file_type="string", string_model=string_model, model_id="target_block", reference_frame="osx_ground")
     spawner.reset_model(box_model)
     # move at a constant speed up to the button base
     # record force data
@@ -154,7 +154,7 @@ if __name__ == '__main__':
     #     max_ft = slice_button(arm, erp, cfm)
     #     data.append([erp, cfm, max_ft])
 
-    # filename = "/root/o2ac-ur/results/gz_btn_data.npy"
+    # filename = "/root/osx-ur/results/gz_btn_data.npy"
     # np.save(filename, data)
     # plot3d(np.array(data))
 

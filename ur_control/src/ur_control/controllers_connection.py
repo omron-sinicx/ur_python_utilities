@@ -16,7 +16,7 @@ class ControllersConnection():
         else:
             prefix = '/controller_manager/'
 
-        # Only for o2ac sim
+        # Only for osx sim
         if rospy.has_param("use_gazebo_sim"):
             prefix = '/controller_manager/'
 

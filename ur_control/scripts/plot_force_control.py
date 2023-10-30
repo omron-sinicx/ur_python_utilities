@@ -6,24 +6,24 @@ import matplotlib
 matplotlib.use('TkAgg')
 
 
-data_actual = np.load("/root/o2ac-ur/underlay_ws/src/ur_python_utilities/ur_control/config/actual.npy")
+data_actual = np.load("/root/osx-ur/underlay_ws/src/ur_python_utilities/ur_control/config/actual.npy")
 orientation_actual = np.array([list(transformations.euler_from_quaternion(t[3:], axes="rxyz")) for t in data_actual])
 # orientation_actual = orientation_actual / np.linalg.norm(orientation_actual)
 
-data_target = np.load("/root/o2ac-ur/underlay_ws/src/ur_python_utilities/ur_control/config/target.npy")
+data_target = np.load("/root/osx-ur/underlay_ws/src/ur_python_utilities/ur_control/config/target.npy")
 orientation_target = data_target[3:]
 # orientation_target = np.array([list(transformations.euler_from_quaternion(t[3:], axes="rxyz")) for t in data_target])
 # orientation_target = orientation_target / np.linalg.norm(orientation_target)
 
-data_target2 = np.load("/root/o2ac-ur/underlay_ws/src/ur_python_utilities/ur_control/config/target2.npy")
+data_target2 = np.load("/root/osx-ur/underlay_ws/src/ur_python_utilities/ur_control/config/target2.npy")
 orientation_target2 = np.array([list(transformations.euler_from_quaternion(t[3:], axes="rxyz")) for t in data_target2])
 # orientation_target2 = orientation_target2 / np.linalg.norm(orientation_target2)
 
-trajectory = np.load("/root/o2ac-ur/underlay_ws/src/ur_python_utilities/ur_control/config/trajectory.npy")
+trajectory = np.load("/root/osx-ur/underlay_ws/src/ur_python_utilities/ur_control/config/trajectory.npy")
 orientation_traj = np.array([list(transformations.euler_from_quaternion(t[3:], axes="rxyz")) for t in trajectory])
 # orientation_traj = orientation_traj / np.linalg.norm(orientation_traj)
 
-data_dxf = np.load("/root/o2ac-ur/underlay_ws/src/ur_python_utilities/ur_control/config/data_dxf.npy")
+data_dxf = np.load("/root/osx-ur/underlay_ws/src/ur_python_utilities/ur_control/config/data_dxf.npy")
 
 data = data_target
 data = trajectory

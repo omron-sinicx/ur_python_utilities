@@ -28,7 +28,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
         if not self.real_robot:
             string_model = get_button_model(base_mass=1., erp=self.object_erp, cfm=self.object_cfm)
             self.box_model = Model("block", self.object_initial_pose, file_type="string",
-                                   string_model=string_model, model_id="target_block", reference_frame="o2ac_ground")
+                                   string_model=string_model, model_id="target_block", reference_frame="osx_ground")
 
     def __load_env_params(self):
         prefix = "ur3e_gym"

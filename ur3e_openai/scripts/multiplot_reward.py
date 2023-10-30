@@ -180,7 +180,7 @@ def multi_plot(folder_names, labels=None, cumulative=False):
 # single_plot(data)
 
 # Multiplot
-ROOT = '/root/o2ac-ur/tf2rl/results/'
+ROOT = '/root/osx-ur/tf2rl/results/'
 folder_names = [
 ### Main Comparison ###
 
