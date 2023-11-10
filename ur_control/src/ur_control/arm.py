@@ -36,6 +36,7 @@ from ur_control.constants import JOINT_ORDER, JOINT_TRAJECTORY_CONTROLLER, FT_SU
     BASE_LINK, EE_LINK, KDL, GENERIC_GRIPPER, ROBOTIQ_GRIPPER
 
 from std_srvs.srv import Empty, SetBool, Trigger
+from ur_control.ur_services import URServices
 
 try:
     from ur_ikfast import ur_kinematics as ur_ikfast
@@ -66,7 +67,7 @@ class Arm(object):
                  robot_urdf_package=None,
                  ik_solver=KDL,
                  namespace=None,
-                 gripper=False,
+                 gripper=None,
                  joint_names_prefix="",
                  ft_topic=None,
                  base_link=None,
@@ -114,6 +115,8 @@ class Arm(object):
 
         self.controller_manager = ControllersConnection(namespace)
 
+        self.dashboard_services = URServices(self.ns)
+
 ### private methods ###
 
     def _init_controllers(self, gripper, joint_names_prefix=None):
@@ -129,13 +132,14 @@ class Arm(object):
         self.joint_traj_controller = JointTrajectoryController(
             publisher_name=traj_publisher, namespace=self.ns, joint_names=self.joint_names, timeout=1.0)
 
-        self.gripper = None
-        if gripper == GENERIC_GRIPPER:
+        if gripper is None:
+            return
+        elif gripper == GENERIC_GRIPPER:
             self.gripper = GripperController(namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
-        # elif gripper == ROBOTIQ_GRIPPER:
-        #     self.gripper = RobotiqGripper(namespace=self.ns, timeout=2.0)
-        # else:
-        #     raise ValueError("Invalid gripper type %s" % gripper)
+        elif gripper == ROBOTIQ_GRIPPER:
+            self.gripper = RobotiqGripper(namespace=self.ns, timeout=2.0)
+        else:
+            raise ValueError("Invalid gripper type %s" % gripper)
 
     def _init_ik_solver(self, base_link, ee_link):
         # Instantiate KDL kinematics solver to compute forward kinematics
