@@ -104,6 +104,9 @@ class GripperController(object):
     def close(self, wait=True):
         return self.command(0.0, percentage=True, wait=wait)
 
+    def percentage_command(self, value, wait=True):
+        return self.command(value, percentage=True, wait=wait)
+
     def command(self, value, percentage=False, wait=True):
         """ assume command given in percentage otherwise meters 
             percentage bool: If True value value assumed to be from 0.0 to 1.0
@@ -189,9 +192,9 @@ class GripperController(object):
 
     def get_position(self):
         """
-        Returns the current joint positions of the UR robot.
+        Returns the current joint positions of the gripper.
         @rtype: numpy.ndarray
-        @return: Current joint positions of the UR robot.
+        @return: Current joint positions of the gripper.
         """
         if self.gripper_type == "hand-e":
             return self._max_gap - (self._current_jnt_positions[0] * 2.0)
@@ -233,6 +236,22 @@ class RobotiqGripper():
 
         self.sub_gripper_status_ = rospy.Subscriber(self.ns + "/gripper_status", robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
         self.gripper = actionlib.SimpleActionClient(self.ns + '/gripper_action_controller', robotiq_msgs.msg.CModelCommandAction)
+        self.gripper_type = str(rospy.get_param(self.ns + "/gripper_type", "85"))
+        if self.gripper_type == "hand-e":
+            self._max_gap = 0.025 * 2.0
+            self._to_open = 0.0
+            self._to_close = self._max_gap
+        elif self.gripper_type == "85":
+            self._max_gap = 0.085
+            self._to_open = self._max_gap
+            self._to_close = 0.001
+            self._max_angle = 0.8028
+        elif self.gripper_type == "140":
+            self._max_gap = 0.140
+            self._to_open = self._max_gap
+            self._to_close = 0.001
+            self._max_angle = 0.69
+
         success = self.gripper.wait_for_server(rospy.Duration(timeout))
         if success:
             rospy.loginfo("=== Connected to ROBOTIQ gripper ===")
@@ -244,6 +263,9 @@ class RobotiqGripper():
 
     def get_position(self):
         return self.opening_width
+    
+    def get_opening_percentage(self):
+        return self.get_position() / self._max_gap
 
     def close(self, force=40.0, velocity=1.0, wait=True):
         return self.send_command("close", force=force, velocity=velocity, wait=wait)
@@ -251,6 +273,37 @@ class RobotiqGripper():
     def open(self, velocity=1.0, wait=True, opening_width=None):
         command = opening_width if opening_width else "open"
         return self.send_command(command, wait=wait, velocity=velocity)
+
+    def convert_percentage_to_width(self, width):
+        if self.gripper_type == "85" or self.gripper_type == "140":
+            width = np.clip(width, 0.0, self._max_gap)
+            percentage = width / self._max_gap
+        if self.gripper_type == "hand-e":
+            raise ValueError("Unimplemented")
+        return percentage
+
+    def convert_width_to_percentage(self, percentage):
+        if self.gripper_type == "85" or self.gripper_type == "140":
+            percentage = np.clip(percentage, 0.0, 1.0)
+            width = (percentage) * self._max_gap
+        if self.gripper_type == "hand-e":
+            percentage = np.clip(percentage, 0.0, 1.0)
+            width = (1.0 - percentage) * self._max_gap / 2.0
+        return width
+    
+    def percentage_command(self, value, wait=True):
+        """
+        0.0 = Fully Close
+        1.0 = Fully Open
+        """
+        if self.gripper_type == "85" or self.gripper_type == "140":
+            value = np.clip(value, 0.0, 1.0)
+            cmd = (value) * self._max_gap
+            return self.send_command(cmd, wait=wait)
+        if self.gripper_type == "hand-e":
+            value = np.clip(value, 0.0, 1.0)
+            cmd = (1.0 - value) * self._max_gap / 2.0
+            return self.send_command(cmd, wait=wait)
 
     def send_command(self, command, force=40.0, velocity=1.0, wait=True):
         """
