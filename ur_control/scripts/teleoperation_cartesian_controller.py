@@ -30,7 +30,6 @@ import sys
 import signal
 
 from geometry_msgs.msg import PoseStamped, WrenchStamped
-from sensor_msgs.msg import Joy
 
 from ur_control import constants
 from ur_control.fzi_cartesian_compliance_controller import CompliantController
@@ -50,7 +49,7 @@ class Teleoperation(TeleoperationBase):
     """ Implementation of Teleoperation with Vive controllers using the FZI Cartesian Compliance Controllers """
 
     def __init__(self) -> None:
-        super(Teleoperation, self).__init__()
+        self.load_params()
 
         self.initial_configuration = rospy.get_param("~initial_configuration")
 
@@ -58,7 +57,7 @@ class Teleoperation(TeleoperationBase):
         self.rate = rospy.Rate(self.control_frequency)
 
         self.incoming_command_timeout = rospy.get_param('~incoming_command_timeout', default=0.1)
-        self.controller_stiffness = rospy.get_param('~controller_stiffness', [2000., 2000., 2000., 200., 50., 50.])
+        self.controller_stiffness = rospy.get_param('~controller_stiffness', [1000., 1000., 1000., 50., 50., 50.])
 
         joint_names_prefix = self.robot_ns + "_" if self.robot_ns else ""
         no_prefix_end_effector = self.end_effector.replace(self.robot_ns+"_", "")
@@ -69,6 +68,7 @@ class Teleoperation(TeleoperationBase):
                                              ft_topic='wrench',
                                              gripper=constants.ROBOTIQ_GRIPPER
                                              )
+        self.robot_arm.dashboard_services.activate_ros_control_on_ur()
 
         self.reset_robot_pose_request = False
 
@@ -78,29 +78,41 @@ class Teleoperation(TeleoperationBase):
 
         rospy.Subscriber('%s/%s/target_frame' % (self.robot_ns, constants.CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
         rospy.Subscriber('%s/%s/target_wrench' % (self.robot_ns, constants.CARTESIAN_COMPLIANCE_CONTROLLER), WrenchStamped, self.target_wrench_cb)
+        
+        super(Teleoperation, self).__init__()
 
     # Overwriting
-    def joy_cb(self, data):
-        super(Teleoperation, self).joy_cb(data)
+    def vive_joy_cb(self, data):
+        super(Teleoperation, self).vive_joy_cb(data)
 
         menu_button = data.buttons[0]
         touchpad_button = data.buttons[1]
+        trigger_button = data.buttons[2]
         grip_button = data.buttons[3]
 
         if touchpad_button:
             rospy.loginfo("=== Resetting robot pose ===")
             self.reset_robot_pose_request = True
             rospy.sleep(1.0)
+        # if grip_button:
+        #     gripper_state = 'open' if self.robot_arm.gripper.get_position() > 0.08 else 'close'
+        #     if gripper_state == 'open':
+        #         rospy.loginfo("=== Closing Gripper ===")
+        #         self.robot_arm.gripper.close(wait=False)
+        #     else:
+        #         rospy.loginfo("=== Opening Gripper ===")
+        #         self.robot_arm.gripper.open(wait=False)
+        #     rospy.sleep(1.0)
+        if trigger_button:
+            target_gripper_pose = max(0.0, 1.-trigger_button/100.0) # In percentage
+            current_gripper_pose = self.robot_arm.gripper.get_opening_percentage()
+            if abs(target_gripper_pose - current_gripper_pose) > 0.05:
+                self.robot_arm.gripper.percentage_command(max(0.0, 1.-trigger_button/100.0))
+                rospy.sleep(0.01)
+        elif self.robot_arm.gripper.get_opening_percentage() < 0.9:
+            self.robot_arm.gripper.open(wait=True)
+
         if grip_button:
-            gripper_state = 'open' if self.robot_arm.gripper.get_position() > 0.08 else 'close'
-            if gripper_state == 'open':
-                rospy.loginfo("=== Closing Gripper ===")
-                self.robot_arm.gripper.close(wait=False)
-            else:
-                rospy.loginfo("=== Opening Gripper ===")
-                self.robot_arm.gripper.open(wait=False)
-            rospy.sleep(1.0)
-        if menu_button:
             rospy.loginfo("=== Zeroing FT sensor ===")
             self.robot_arm.zero_ft_sensor()
             rospy.sleep(1.0)
@@ -125,7 +137,7 @@ class Teleoperation(TeleoperationBase):
         self.robot_arm.set_control_mode(mode="spring-mass-damper")
         self.robot_arm.update_stiffness(self.controller_stiffness)
         self.robot_arm.update_pd_gains(p_gains=[0.05, 0.05, 0.05, 1.0, 1.0, 1.0])
-        self.robot_arm.set_solver_parameters(error_scale=0.6, iterations=1)
+        self.robot_arm.set_solver_parameters(error_scale=0.5, iterations=1)
 
         compliance_controller_activated = False
 
@@ -159,5 +171,6 @@ class Teleoperation(TeleoperationBase):
 
 
 if __name__ == "__main__":
+    rospy.init_node('vive_teleoperation', anonymous=False)
     teleop = Teleoperation()
     teleop.run()

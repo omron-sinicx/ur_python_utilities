@@ -1,4 +1,9 @@
 <launch>
+    <node name="static_transform_publisher" pkg="tf"
+	      type="static_transform_publisher"
+	      args="0.0 0.0 2.0 0.0 0.0 0.0
+	            world vive_world 100"/>
+
     <include file="$(find vive_tracking_ros)/launch/track_controller.launch" />
 
     <arg name="controller_name" default="left_controller" />
@@ -18,9 +23,16 @@
         <param name="robot_namespace" value="b_bot" />
         <param name="robot_base_link" value="b_bot_base_link" />
         <param name="robot_end_effector_link" value="b_bot_gripper_tip_link" />
+        <param name="world_frame" value="world" />
+
+        <!-- Tracking mode: -->
+         <!-- controller_twist: based solely on the controller twist -->
+         <!-- controller_pose: based solely on the controller pose -->
+        <param name="tracking_mode" value="controller_twist" />
+        
 
         <!-- Play area in [translation (m), rotation(deg)] -->
-        <rosparam param="play_area">[0.2, 0.2, 0.2, 10, 10, 90]</rosparam>
+        <rosparam param="play_area">[0.2, 0.2, 0.2, 90, 90, 90]</rosparam>
 
         <!-- Scale controllers sensitivity -->
         <rosparam param="scale_velocities">[1.0, 1.0, 1.0, 1.0, 1.0, 1.0]</rosparam>
