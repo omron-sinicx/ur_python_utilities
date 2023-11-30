@@ -37,6 +37,8 @@ from ur_control import transformations
 import getch
 
 import numpy as np
+
+from ur_control.constants import GENERIC_GRIPPER
 np.set_printoptions(linewidth=np.inf)
 np.set_printoptions(suppress=True)
 
@@ -195,7 +197,7 @@ See help inside the example with the '?' key for key bindings.
     robot_urdf = "ur3e"
     rospackage = None
     tcp_link = "gripper_tip_link"
-    use_gripper = args.gripper
+    use_gripper = None if not args.gripper else GENERIC_GRIPPER
     joint_names_prefix = ns+'_' if ns else ''
 
     global arm
