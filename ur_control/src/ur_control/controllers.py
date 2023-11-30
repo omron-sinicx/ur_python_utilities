@@ -26,11 +26,25 @@ except ImportError:
     pass
 
 
-class GripperController(object):
+class GripperControllerBase():
+    def open(self):
+        raise NotImplementedError()
+
+    def close(self):
+        raise NotImplementedError()
+
+    def get_position(self):
+        raise NotImplementedError()
+
+    def get_opening_percentage(self):
+        raise NotImplementedError()
+
+
+class GripperController(GripperControllerBase):
     def __init__(self, namespace='', prefix=None, timeout=5.0, attach_link='robot::wrist_3_link'):
         self.ns = utils.solve_namespace(namespace)
         self.prefix = prefix if prefix is not None else ''
-        node_name = "gripper_action_controller"
+        node_name = "gripper_controller"
         self.gripper_type = str(rospy.get_param(self.ns + node_name + "/gripper_type"))
         self.valid_joint_names = []
         if rospy.has_param(self.ns + node_name + "/joint"):
@@ -201,6 +215,9 @@ class GripperController(object):
         else:
             return self._angle_to_distance(self._current_jnt_positions[0])
 
+    def get_opening_percentage(self):
+        return self.get_position() / self._max_gap
+
     def joint_states_cb(self, msg):
         """
         Callback executed every time a message is publish in the C{joint_states} topic.
@@ -228,7 +245,7 @@ class GripperController(object):
             self._joint_names = list(name)
 
 
-class RobotiqGripper():
+class RobotiqGripper(GripperControllerBase):
     def __init__(self, namespace="", timeout=2):
         self.ns = namespace
 
@@ -263,7 +280,7 @@ class RobotiqGripper():
 
     def get_position(self):
         return self.opening_width
-    
+
     def get_opening_percentage(self):
         return self.get_position() / self._max_gap
 
@@ -290,7 +307,7 @@ class RobotiqGripper():
             percentage = np.clip(percentage, 0.0, 1.0)
             width = (1.0 - percentage) * self._max_gap / 2.0
         return width
-    
+
     def percentage_command(self, value, wait=True):
         """
         0.0 = Fully Close
@@ -332,6 +349,7 @@ class RobotiqGripper():
             return True if result else False
         else:
             return True
+
 
 class JointControllerBase(object):
     """
@@ -689,7 +707,7 @@ class FTsensor(object):
         self.wrench_rate = 500
         self.wrench_filter = filters.ButterLowPass(2.5, self.rate, 2)
         self.wrench_window = int(100)
-        assert(self.wrench_window >= 5)
+        assert (self.wrench_window >= 5)
         self.wrench_queue = collections.deque(maxlen=self.wrench_window)
         rospy.Subscriber('%s' % ns, WrenchStamped, self.cb_raw)
         if not utils.wait_for(lambda: self.raw_msg is not None, timeout=timeout):
