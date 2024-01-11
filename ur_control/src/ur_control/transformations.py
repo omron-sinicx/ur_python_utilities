@@ -1855,6 +1855,7 @@ def integrateUnitQuaternionDMM(q, w, dt):
     q_tmp = numpy.concatenate([numpy.sin(w_norm*dt/2)*w/w_norm, [numpy.cos(w_norm*dt/2.)]])
     return quaternion_multiply(q_tmp, q)
 
+
 def integrateUnitQuaternionDMM2(q, w, dt):
     """ Integrate a unit quaterniong using the Direct Multiplicaiton Method"""
     q_ = vector_to_pyquaternion(q)
@@ -1898,18 +1899,22 @@ def pose_to_transform(pose):
     return transform
 
 
-def angular_velocity_from_quaternions(from_Q, to_Q, dt):
-    """
-    Calculates the angular velocity between two quaternions for a delta time dt
-    """
-    if isinstance(from_Q, Quaternion) and isinstance(to_Q, Quaternion):
-        return (2.0 * (to_Q-from_Q)*from_Q.inverse / dt).vector
-    else:
-        assert isinstance(from_Q, (list, numpy.ndarray))
-        assert isinstance(to_Q, (list, numpy.ndarray))
-        _from_Q = Quaternion(numpy.roll(from_Q, 1))
-        _to_Q = Quaternion(numpy.roll(to_Q, 1))
-        return angular_velocity_from_quaternions(_from_Q, _to_Q, dt)
+def angular_velocity_from_quaternions(q0, q1, dt):
+    return (2.0 / dt) * quaternion_multiply(q1 - q0, quaternion_inverse(q0))[:3]
+
+
+# def angular_velocity_from_quaternions(from_Q, to_Q, dt):
+#     """
+#     Calculates the angular velocity between two quaternions for a delta time dt
+#     """
+#     if isinstance(from_Q, Quaternion) and isinstance(to_Q, Quaternion):
+#         return (2.0 * (to_Q-from_Q)*from_Q.inverse / dt).vector
+#     else:
+#         assert isinstance(from_Q, (list, numpy.ndarray))
+#         assert isinstance(to_Q, (list, numpy.ndarray))
+#         _from_Q = Quaternion(numpy.roll(from_Q, 1))
+#         _to_Q = Quaternion(numpy.roll(to_Q, 1))
+#         return angular_velocity_from_quaternions(_from_Q, _to_Q, dt)
 
 
 def vector_to_pyquaternion(vector):
