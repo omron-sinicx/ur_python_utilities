@@ -142,8 +142,8 @@ class JointPositionController(JointControllerBase):
             raise rospy.ROSException('JointPositionController timed out waiting joint_states topic: {0}'.format(namespace))
         self._cmd_pub = dict()
         for joint in self._joint_names:
-            print(('%s%s/command' % (self.ns, joint)))
-            self._cmd_pub[joint] = rospy.Publisher('%s%s/command' % (self.ns, joint), Float64, queue_size=3)
+            print(('%s%scommand' % (self.ns, joint)))
+            self._cmd_pub[joint] = rospy.Publisher('%s%scommand' % (self.ns, joint), Float64, queue_size=3)
         # Wait for the joint position controllers
         controller_list_srv = self.ns + 'controller_manager/list_controllers'
         rospy.logdebug('Waiting for the joint position controllers...')

@@ -87,7 +87,7 @@ class Arm(object):
 
         """
 
-        self.ns = namespace if namespace else ""
+        self.ns = utils.solve_namespace(namespace)
 
         base_link = utils.resolve_parameter(value=base_link, default_value=BASE_LINK)
         ee_link = utils.resolve_parameter(value=ee_link, default_value=EE_LINK)
@@ -115,7 +115,7 @@ class Arm(object):
 
         self.__init_ft_sensor__()
 
-        self.controller_manager = ControllersConnection(namespace)
+        self.controller_manager = ControllersConnection(self.ns)
         self.dashboard_services = URServices(self.ns)
 
 ### private methods ###

@@ -118,27 +118,27 @@ class CompliantController(Arm):
         self.current_wrench_pose = np.zeros(6)
 
         # Monitor external goals
-        rospy.Subscriber('%s/%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
-        rospy.Subscriber('%s/%s/target_wrench' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), WrenchStamped, self.target_wrench_cb)
+        rospy.Subscriber('%s%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
+        rospy.Subscriber('%s%s/target_wrench' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), WrenchStamped, self.target_wrench_cb)
 
-        self.cartesian_target_pose_pub = rospy.Publisher('%s/%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, queue_size=10.0)
-        self.cartesian_target_wrench_pub = rospy.Publisher('%s/%s/target_wrench' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), WrenchStamped, queue_size=10.0)
+        self.cartesian_target_pose_pub = rospy.Publisher('%s%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, queue_size=10.0)
+        self.cartesian_target_wrench_pub = rospy.Publisher('%s%s/target_wrench' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), WrenchStamped, queue_size=10.0)
 
         self.dyn_config_clients = {
-            "trans_x": dynamic_reconfigure.client.Client("%s/%s/pd_gains/trans_x" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
-            "trans_y": dynamic_reconfigure.client.Client("%s/%s/pd_gains/trans_y" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
-            "trans_z": dynamic_reconfigure.client.Client("%s/%s/pd_gains/trans_z" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
-            "rot_x": dynamic_reconfigure.client.Client("%s/%s/pd_gains/rot_x" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
-            "rot_y": dynamic_reconfigure.client.Client("%s/%s/pd_gains/rot_y" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
-            "rot_z": dynamic_reconfigure.client.Client("%s/%s/pd_gains/rot_z" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "trans_x": dynamic_reconfigure.client.Client("%s%s/pd_gains/trans_x" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "trans_y": dynamic_reconfigure.client.Client("%s%s/pd_gains/trans_y" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "trans_z": dynamic_reconfigure.client.Client("%s%s/pd_gains/trans_z" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "rot_x": dynamic_reconfigure.client.Client("%s%s/pd_gains/rot_x" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "rot_y": dynamic_reconfigure.client.Client("%s%s/pd_gains/rot_y" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "rot_z": dynamic_reconfigure.client.Client("%s%s/pd_gains/rot_z" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
 
-            "stiffness": dynamic_reconfigure.client.Client("%s/%s/stiffness" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "stiffness": dynamic_reconfigure.client.Client("%s%s/stiffness" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
 
-            "hand_frame_control": dynamic_reconfigure.client.Client("%s/%s/force" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "hand_frame_control": dynamic_reconfigure.client.Client("%s%s/force" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
 
-            "solver": dynamic_reconfigure.client.Client("%s/%s/solver" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "solver": dynamic_reconfigure.client.Client("%s%s/solver" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
 
-            "end_effector_link": dynamic_reconfigure.client.Client("%s/%s" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
+            "end_effector_link": dynamic_reconfigure.client.Client("%s%s" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
         }
         self.update_thread = None
         self.async_mode = False

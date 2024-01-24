@@ -243,12 +243,12 @@ class RobotiqGripper(GripperControllerBase):
 
         self.opening_width = 0.0
 
-        self.sub_gripper_status_ = rospy.Subscriber(self.ns + "/gripper_status", robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
-        self.gripper = actionlib.SimpleActionClient(self.ns + '/gripper_action_controller', robotiq_msgs.msg.CModelCommandAction)
+        self.sub_gripper_status_ = rospy.Subscriber(self.ns + "gripper_status", robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
+        self.gripper = actionlib.SimpleActionClient(self.ns + "gripper_action_controller", robotiq_msgs.msg.CModelCommandAction)
         
-        self.gripper_type = str(rospy.get_param(self.ns + "/gripper_action_controller/joint_name", "finger_joint"))
-        self._max_gap = str(rospy.get_param(self.ns + "/gripper_action_controller/max_gap", "0.085"))
-        self._max_angle = str(rospy.get_param(self.ns + "/gripper_action_controller/counts_to_meters", "0.8"))
+        self.gripper_type = str(rospy.get_param(self.ns + "gripper_action_controller/joint_name", "finger_joint"))
+        self._max_gap = str(rospy.get_param(self.ns + "gripper_action_controller/max_gap", "0.085"))
+        self._max_angle = str(rospy.get_param(self.ns + "gripper_action_controller/counts_to_meters", "0.8"))
 
         if self.gripper_type == "robotiq_hande_joint_finger":
             self._max_gap = self._max_gap * 2.0
