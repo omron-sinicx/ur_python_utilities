@@ -133,10 +133,10 @@ def map_keyboard():
         '7': (update_d, ['x', -0.0001], "delta_x decrease"),
 
         # Gripper
-        '5': (move_gripper, [0.002], "open gripper a bit"),
+        '5': (move_gripper, [0.005], "open gripper a bit"),
         't': (open_gripper, [], "open gripper"),
         'g': (close_gripper, [], "close gripper"),
-        'b': (move_gripper, [-0.002], "close gripper a bit"),
+        'b': (move_gripper, [-0.005], "close gripper a bit"),
     }
     done = False
     print("Controlling joints. Press ? for help, Esc to quit.")
