@@ -29,7 +29,7 @@ import numpy as np
 
 from ur_control.arm import Arm
 from ur_control import conversions
-from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, STOP_ON_TARGET_FORCE, FORCE_TORQUE_EXCEEDED, DONE, TERMINATION_CRITERIA
+from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
 
 from geometry_msgs.msg import WrenchStamped, PoseStamped
 
@@ -94,7 +94,7 @@ def switch_cartesian_controllers(func):
             res = func(*args, **kwargs)
         except Exception as e:
             rospy.logerr("Exception: %s" % e)
-            res = DONE
+            res = ExecutionResult.DONE
 
         args[0].activate_joint_trajectory_controller()
 
@@ -281,7 +281,7 @@ class CompliantController(Arm):
         initial_time = rospy.get_time()
         step_initial_time = rospy.get_time()
 
-        result = DONE
+        result = ExecutionResult.DONE
         stop_target_wrench_mask = stop_at_wrench != 0
 
         # Publish target wrench only once
@@ -304,20 +304,20 @@ class CompliantController(Arm):
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
                 if termination_criteria(self.end_effector()):
                     rospy.loginfo("Termination criteria returned True, stopping force control")
-                    result = TERMINATION_CRITERIA
+                    result = ExecutionResult.TERMINATION_CRITERIA
                     break
 
             # TODO: fix, it should check the sign of the target wrench and the current one too
             rospy.loginfo_throttle(1, 'F/T {}'.format(np.round(current_wrench[:3], 2)))
             if stop_on_target_force and is_more_extreme(current_wrench[stop_target_wrench_mask], stop_at_wrench[stop_target_wrench_mask]):
                 rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 2)) + ' Stopping!')
-                result = STOP_ON_TARGET_FORCE
+                result = ExecutionResult.STOP_ON_TARGET_FORCE
                 break
 
             # Safety limits: max force
             if np.any(np.abs(current_wrench) > max_force_torque):
                 rospy.logerr('Maximum force/torque exceeded {}'.format(np.round(current_wrench, 3)))
-                result = FORCE_TORQUE_EXCEEDED
+                result = ExecutionResult.FORCE_TORQUE_EXCEEDED
                 break
 
             if (rospy.get_time() - step_initial_time) > step_duration:
