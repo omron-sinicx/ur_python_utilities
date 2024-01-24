@@ -130,7 +130,7 @@ class Arm(object):
         self._flex_trajectory_pub = rospy.Publisher(traj_publisher_flex, JointTrajectory, queue_size=10)
 
         self.joint_traj_controller = JointTrajectoryController(
-            publisher_name=traj_publisher, namespace=self.ns, joint_names=self.joint_names, timeout=1.0)
+            publisher_name=traj_publisher, namespace=self.ns, joint_names=self.joint_names, timeout=0.1)
 
         if gripper is None:
             return
