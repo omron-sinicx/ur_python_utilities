@@ -332,7 +332,7 @@ class JointTrajectoryController(JointControllerBase):
         """
         self._goal.trajectory.points = copy.deepcopy(trajectory.points)
 
-    def start(self, delay=0.1, wait=False, timeout=None):
+    def start(self, delay=0.1, wait=False):
         """
         Starts the trajectory. It sends the C{FollowJointTrajectoryGoal} to the action server.
         @type  delay: float
@@ -343,7 +343,7 @@ class JointTrajectoryController(JointControllerBase):
         start_time = rospy.Time() if delay == 0 else rospy.Time.now() + rospy.Duration(delay)
         self._goal.trajectory.header.stamp = start_time
         if wait:
-            self._client.send_goal_and_wait(self._goal, execute_timeout=_timeout, preempt_timeout=_timeout)
+            self._client.send_goal_and_wait(self._goal)
         else:
             self._client.send_goal(self._goal)
 

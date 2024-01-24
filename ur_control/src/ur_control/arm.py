@@ -29,8 +29,6 @@ import rospy
 from geometry_msgs.msg import WrenchStamped
 from std_srvs.srv import Empty, SetBool, Trigger
 
-from geometry_msgs.msg import WrenchStamped
-
 from ur_control import utils, spalg, conversions, transformations
 from ur_control.exceptions import InverseKinematicsException
 from ur_control.controllers_connection import ControllersConnection
@@ -40,9 +38,6 @@ from ur_control.constants import BASE_LINK, EE_LINK, JOINT_TRAJECTORY_CONTROLLER
     ExecutionResult, IKSolverType, GripperType, \
     get_arm_joint_names
 
-from std_srvs.srv import Empty, SetBool, Trigger
-from ur_control.ur_services import URServices
-
 try:
     from ur_ikfast import ur_kinematics as ur_ikfast
 except ImportError:
@@ -51,14 +46,6 @@ from ur_pykdl import ur_kinematics
 from trac_ik_python.trac_ik import IK as TRACK_IK_SOLVER
 
 cprint = utils.TextColors()
-
-
-def resolve_parameter(value, default_value):
-    if value:
-        return value
-    if default_value:
-        return default_value
-    raise ValueError("No value defined for parameter")
 
 
 class Arm(object):
