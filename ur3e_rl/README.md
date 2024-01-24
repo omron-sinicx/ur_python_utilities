@@ -7,7 +7,7 @@
 
 1. Start the gazebo peg-in-hole environment 
     ```
-    roslaunch ur3_gazebo ur3e_dual.launch peg_shape:=cube
+    roslaunch ur_gripper_gazebo ur3e_dual.launch peg_shape:=cube
     ```
 2. Unpause the environment
 3. Execute trainer script

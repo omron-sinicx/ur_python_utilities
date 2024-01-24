@@ -17,8 +17,8 @@ def spawn_robot_model(peg_shape='cube'):
     uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
     roslaunch.configure_logging(uuid)
     launch = roslaunch.scriptapi.ROSLaunch()
-    ur3_gazebo_path = rospack.get_path("ur3_gazebo")
-    launch_filepath = ur3_gazebo_path + "/launch/ur_peg_alone.launch"
+    ur_gripper_gazebo_path = rospack.get_path("ur_gripper_gazebo")
+    launch_filepath = ur_gripper_gazebo_path + "/launch/ur_peg_alone.launch"
     cli_args = [launch_filepath, 'peg_shape:=%s' % peg_shape ]
     roslaunch_args = cli_args[1:]
     roslaunch_file = [(roslaunch.rlutil.resolve_launch_arguments(cli_args)[0], roslaunch_args)]

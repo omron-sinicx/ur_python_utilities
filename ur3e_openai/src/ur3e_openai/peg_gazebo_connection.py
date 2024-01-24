@@ -220,7 +220,7 @@ class GazeboConnection(ConnectionBase):
             raise ValueError('Invalid peg shape: %s' % peg_shape)
         
         self.launch = roslaunch.scriptapi.ROSLaunch()
-        launch_filepath = rospack.get_path("ur3_gazebo") + "/launch/ur_peg_alone.launch"
+        launch_filepath = rospack.get_path("ur_gripper_gazebo") + "/launch/ur_peg_alone.launch"
         # launch_filepath = rospack.get_path("ur3e_dual_gazebo") + "/launch/single_ur3e_peg_alone.launch"
         
         cli_args = [launch_filepath, 'peg_shape:=%s' % peg_shape]

@@ -127,7 +127,7 @@ if __name__ == '__main__':
     listener = tf.TransformListener()
     b_bot = RobotBase("b_bot", listener)
 
-    spawner = GazeboModels('ur3_gazebo')
+    spawner = GazeboModels('ur_gripper_gazebo')
 
     arm = CompliantController(namespace='b_bot',
                               joint_names_prefix='b_bot_',

@@ -94,7 +94,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
         self.logger = initialize_logger(log_tag="dummy", save_log=False)
 
         if not self.real_robot:
-            self.spawner = GazeboModels('ur3_gazebo')
+            self.spawner = GazeboModels('ur_gripper_gazebo')
             self.target_model = Model("target", [0, 0, 0, 0, 0, 0], file_type='string', string_model=SPHERE.format(
                 "ball", 0.01, "GreenTransparent"), reference_frame="base_link")
             self.start_model = Model("start", [0, 0, 0, 0, 0, 0], file_type='string', string_model=SPHERE.format(
