@@ -57,7 +57,7 @@ class PDRotation:
         return output
 
 class PID:
-    def __init__(self, Kp, Ki=None, Kd=None, dynamic_pid=False, max_gain_multiplier=200.0):
+    def __init__(self, Kp, Ki=None, Kd=None, dynamic_pid=False, max_gain_multiplier=10.0):
         # Proportional gain
         self.Kp = np.array(Kp)
         self.Ki = np.zeros_like(Kp)
@@ -71,7 +71,7 @@ class PID:
         self.set_windup(np.ones_like(self.Kp))
         # Reset
         self.reset()
-        self.dynamic_pid = dynamic_pid
+        self.scale_gains = dynamic_pid
         self.max_gain_multiplier = max_gain_multiplier
 
     def reset(self):
@@ -94,11 +94,17 @@ class PID:
     def update(self, error, dt=None):
         # CAUTION: naive scaling of the Kp parameter based on the error
         # The main idea, the smaller the error the higher the gain
-        if self.dynamic_pid:
-            kp = np.abs([self.Kp[i]/error[i] if error[i] != 0.0 else self.Kp[i] for i in range(6)])
-            kp = np.clip(kp, self.Kp, self.Kp*self.max_gain_multiplier)
-            kd = np.abs([self.Kd[i]*error[i] if error[i] != 0.0 else self.Kd[i] for i in range(6)])
-            kd = np.clip(kd, self.Kd/self.max_gain_multiplier, self.Kd)
+        if self.scale_gains:
+            kp = np.zeros_like(self.Kp)
+            kd = np.zeros_like(self.Kd)
+
+            for i in range(len(error)):
+                # from position_error < 0.01m increase scale error
+                factor = 1 - np.tanh(100 * error[i])
+                kp[i] = np.interp(factor, [0.0, 1.0], [self.Kp[i], self.Kp[i] * self.max_gain_multiplier])
+                kd[i] = np.interp(factor, [0.0, 1.0], [self.Kd[i], self.Kd[i] * self.max_gain_multiplier])
+
+            kd = self.Kd
             ki = self.Ki
         else:
             kp = self.Kp
@@ -333,6 +339,13 @@ def raise_not_implemented():
     raise NotImplementedError()
 
 
+def topic_exist(topic):
+    published_topics = rospy.get_published_topics()
+    for pt in published_topics:
+        if topic == pt[0] :
+            return True
+    return False
+
 def read_key(echo=False):
     """
     Reads a key from the keyboard
@@ -348,6 +361,11 @@ def read_key(echo=False):
         os.system("stty echo")
     return key.lower()
 
+def resolve_parameter(value, default_value):
+    if value:
+        return value
+    else:
+        return default_value
 
 def read_parameter(name, default):
     """
@@ -413,7 +431,7 @@ def read_parameter_fatal(name):
     return rospy.get_param(name, None)
 
 
-def solve_namespace(namespace=''):
+def solve_namespace(namespace=None):
     """
     Appends neccessary slashes required for a proper ROS namespace.
     @type namespace: string
@@ -421,7 +439,7 @@ def solve_namespace(namespace=''):
     @rtype: string
     @return: Proper ROS namespace.
     """
-    if len(namespace) == 0:
+    if namespace is None or len(namespace) == 0:
         namespace = rospy.get_namespace()
     elif len(namespace) == 1:
         if namespace != '/':

@@ -1,4 +1,28 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
+
+# The MIT License (MIT)
+#
+# Copyright (c) 2018-2021 Cristian Beltran
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+# Author: Cristian Beltran
 
 # The MIT License (MIT)
 #
@@ -123,19 +147,19 @@ class MoveGroupPythonIntefaceTutorial(object):
         # Getting Basic Information
         # ^^^^^^^^^^^^^^^^^^^^^^^^^
         # We can get the name of the reference frame for this robot:
-        print "============ Planning frame: %s" % self.planning_frame
+        print("============ Planning frame: %s" % self.planning_frame)
 
         # We can also print the name of the end-effector link for this group:
-        print "============ End effector link: %s" % self.eef_link
+        print("============ End effector link: %s" % self.eef_link)
 
         # We can get a list of all the groups in the robot:
-        print "============ Available Planning Groups:", self.group_names
+        print("============ Available Planning Groups:", self.group_names)
 
         # Sometimes for debugging it is useful to print the entire state of the
         # robot:
-        print "============ Printing robot state"
-        print self.robot.get_current_state()
-        print ""
+        print("============ Printing robot state")
+        print(self.robot.get_current_state())
+        print("")
         # END_SUB_TUTORIAL
 
     def go_to_joint_state(self):
@@ -186,7 +210,7 @@ class MoveGroupPythonIntefaceTutorial(object):
         # We can plan a motion for this group to a desired pose for the
         # end-effector:
         pose_goal = move_group.get_current_pose().pose
-        pose_goal.position.y = -0.1
+        pose_goal.position.y += -0.1
 
         move_group.set_pose_target(pose_goal)
 
@@ -346,12 +370,11 @@ class MoveGroupPythonIntefaceTutorial(object):
         # ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
         # First, we will create a box in the planning scene at the location of the left finger:
         box_pose = geometry_msgs.msg.PoseStamped()
-        box_pose.header.frame_id = "ur3_robotiq_hande_gripper"
+        box_pose.header.frame_id = "gripper_tip_link"
         box_pose.pose.orientation.w = 1.0
         box_pose.pose.position.z = 0.0  # slightly above the end effector
         box_name = "box_name"
         scene.add_box(box_name, box_pose, size=(0.04, 0.04, 0.04))
-        # scene.add_mesh(box_name, box_pose, "/root/ros_ws/src/ros-universal-robots/ur3e_dual_moveit_config/meshes/tool-holder-pick.stl")
 
         # END_SUB_TUTORIAL
         # Copy local variables back to class variables. In practice, you should use the class
@@ -379,7 +402,6 @@ class MoveGroupPythonIntefaceTutorial(object):
         box_pose.pose.position.z = 1.02  # slightly above the end effector
         box_name = "box_name"
         scene.add_box(box_name, box_pose, size=(0.03, 0.03, 0.03))
-        # scene.add_mesh(box_name, box_pose, "/root/ros_ws/src/ros-universal-robots/ur3e_dual_moveit_config/meshes/tool-holder-pick.stl")
 
         # END_SUB_TUTORIAL
         # Copy local variables back to class variables. In practice, you should use the class
@@ -493,57 +515,57 @@ def main():
         tutorial.detach_box()
     elif args.tutorial:
         try:
-            print ""
-            print "----------------------------------------------------------"
-            print "Welcome to the MoveIt MoveGroup Python Interface Tutorial"
-            print "----------------------------------------------------------"
-            print "Press Ctrl-D to exit at any time"
-            print ""
-            print "============ Press `Enter` to begin the tutorial by setting up the moveit_commander ..."
-            raw_input()
+            print("")
+            print("----------------------------------------------------------")
+            print("Welcome to the MoveIt MoveGroup Python Interface Tutorial")
+            print("----------------------------------------------------------")
+            print("Press Ctrl-D to exit at any time")
+            print("")
+            print("============ Press `Enter` to begin the tutorial by setting up the moveit_commander ...")
+            input()
             tutorial.display_basic_info()
-            print "============ Press `Enter` to execute a movement using a joint state goal ..."
-            raw_input()
+            print("============ Press `Enter` to execute a movement using a joint state goal ...")
+            input()
             tutorial.go_to_joint_state()
 
-            print "============ Press `Enter` to execute a movement using a pose goal ..."
-            raw_input()
+            print("============ Press `Enter` to execute a movement using a pose goal ...")
+            input()
             tutorial.go_to_pose_goal()
 
-            print "============ Press `Enter` to plan and display a Cartesian path ..."
-            raw_input()
+            print("============ Press `Enter` to plan and display a Cartesian path ...")
+            input()
             cartesian_plan, fraction = tutorial.plan_cartesian_path()
 
-            print "============ Press `Enter` to display a saved trajectory (this will replay the Cartesian path)  ..."
-            raw_input()
+            print("============ Press `Enter` to display a saved trajectory (this will replay the Cartesian path)  ...")
+            input()
             tutorial.display_trajectory(cartesian_plan)
 
-            print "============ Press `Enter` to execute a saved path ..."
-            raw_input()
+            print("============ Press `Enter` to execute a saved path ...")
+            input()
             tutorial.execute_plan(cartesian_plan)
 
-            print "============ Press `Enter` to add a box to the planning scene ..."
-            raw_input()
+            print("============ Press `Enter` to add a box to the planning scene ...")
+            input()
             tutorial.add_box()
 
-            print "============ Press `Enter` to attach a Box to the ur3e robot ..."
-            raw_input()
+            print("============ Press `Enter` to attach a Box to the ur3e robot ...")
+            input()
             tutorial.attach_box()
 
-            print "============ Press `Enter` to plan and execute a path with an attached collision object ..."
-            raw_input()
+            print("============ Press `Enter` to plan and execute a path with an attached collision object ...")
+            input()
             cartesian_plan, fraction = tutorial.plan_cartesian_path(scale=-1)
             tutorial.execute_plan(cartesian_plan)
 
-            print "============ Press `Enter` to detach the box from the ur3e robot ..."
-            raw_input()
+            print("============ Press `Enter` to detach the box from the ur3e robot ...")
+            input()
             tutorial.detach_box()
 
-            print "============ Press `Enter` to remove the box from the planning scene ..."
-            raw_input()
+            print("============ Press `Enter` to remove the box from the planning scene ...")
+            input()
             tutorial.remove_box()
 
-            print "============ Python tutorial demo complete!"
+            print("============ Python tutorial demo complete!")
         except rospy.ROSInterruptException:
             return
         except KeyboardInterrupt:

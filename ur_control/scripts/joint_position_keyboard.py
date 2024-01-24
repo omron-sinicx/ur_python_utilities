@@ -38,7 +38,7 @@ import getch
 
 import numpy as np
 
-from ur_control.constants import GENERIC_GRIPPER
+from ur_control.constants import GripperType
 np.set_printoptions(linewidth=np.inf)
 np.set_printoptions(suppress=True)
 
@@ -54,7 +54,7 @@ def map_keyboard():
         global delta_q
         current_position = arm.joint_angles()
         current_position[joint_name] += delta_q * sign
-        arm.set_joint_positions_flex(current_position, t=0.25)
+        arm.set_joint_positions(positions=current_position, target_time=0.25)
 
     def update_d(delta, increment):
         if delta == 'q':
@@ -79,7 +79,7 @@ def map_keyboard():
             delta[dim] += delta_q * sign
 
         xc = transformations.transform_pose(x, delta, rotated_frame=relative_to_tcp)
-        arm.set_target_pose_flex(pose=xc, t=0.25)
+        arm.set_target_pose(pose=xc, target_time=0.25)
 
     def open_gripper():
         arm.gripper.open()
@@ -182,7 +182,7 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--gripper', action='store_true', help='enable gripper commands')
+        '--robotiq_gripper', action='store_true', help='enable Robotiq gripper commands')
     parser.add_argument(
         '--robot', type=str, help='Version of Universal Robot arm. Default="ur3e"', default='ur3e')
 
@@ -193,19 +193,15 @@ See help inside the example with the '?' key for key bindings.
     global relative_to_tcp
     relative_to_tcp = args.relative
 
-    ns = args.namespace
-    robot_urdf = "ur3e"
-    rospackage = None
-    tcp_link = "gripper_tip_link"
-    use_gripper = None if not args.gripper else GENERIC_GRIPPER
-    joint_names_prefix = ns+'_' if ns else ''
+    tcp_link = "tool0"
+    joints_prefix = args.namespace + '_' if args.namespace else None
+    gripper = GripperType.ROBOTIQ if args.robotiq_gripper else GripperType.GENERIC
 
     global arm
-    arm = Arm(gripper=use_gripper, namespace=ns,
-              joint_names_prefix=joint_names_prefix,
-              robot_urdf=robot_urdf, robot_urdf_package=rospackage,
-              ee_link=tcp_link,
-              ft_topic='wrench')
+    arm = Arm(namespace=args.namespace,
+              gripper_type=gripper,
+              joint_names_prefix=joints_prefix,
+              ee_link=tcp_link)
 
     map_keyboard()
     print("Done.")

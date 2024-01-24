@@ -104,7 +104,7 @@ def get_plane_direction(plane, radius):
     sign = 1. if '+' in plane else -1.
     direction_array[DIRECTION_INDEX.get(plane[1])] = radius * sign
 
-    return np.array(direction_array)
+    return np.array(direction_array, dtype=np.float64)
 
 
 def compute_rotation_wiggle(initial_orientation, direction, angle, steps, revolutions):
