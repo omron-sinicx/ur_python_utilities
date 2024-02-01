@@ -47,19 +47,27 @@ signal.signal(signal.SIGINT, signal_handler)
 def move_joints():
     q = [1.3506, -1.6493, 1.9597, -1.8814, -1.5652, 1.3323]
     q = [1.4414, -1.7303, 2.145, -1.9863, -1.5656, 1.4397]
-    arm.set_joint_positions(q, t=5, wait=True)
+    arm.set_joint_positions(positions=q, target_time=5, wait=True)
 
 
 def move_cartesian():
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
-    arm.set_joint_positions(q, t=1, wait=True)
+    arm.set_joint_positions(positions=q, target_time=1, wait=True)
 
-    arm.set_position_control_mode(False)
-    arm.set_control_mode(mode="spring-mass-damper")
-    # arm.set_control_mode(mode="parallel")
+    # arm.set_position_control_mode(False)
+    # arm.set_control_mode(mode="spring-mass-damper")
+    arm.set_position_control_mode(True)
+    arm.set_control_mode(mode="parallel")
+    arm.set_solver_parameters(error_scale=0.5, iterations=1)
+    arm.update_stiffness([1500,1500,1500,100,100,100])
 
-    selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
+    # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
+    selection_matrix = np.ones(6)
     arm.update_selection_matrix(selection_matrix)
+
+    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    arm.update_pd_gains(p_gains, d_gains=d_gains)
 
     ee = arm.end_effector()
 
@@ -74,10 +82,10 @@ def move_cartesian():
     # trajectory = np.array([-0.02, 0.50, 0.195, -0.00812894,  0.70963372, -0.00882711,  0.70446859])
     target_force = np.zeros(6)
 
-    def f(x): return print(np.round(trajectory[:3] - x[:3], 4))
+    def f(x): return rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(trajectory, target_wrench=target_force, max_force_torque=[50., 50., 50., 5., 5., 5.],
-                                         duration=5, func=f, scale_up_error=True, max_scale_error=1.5)
+                                         duration=5, func=f, scale_up_error=True, max_scale_error=3.0, auto_stop=False)
     print("EE change", ee - arm.end_effector())
     print("ok", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
 
@@ -86,6 +94,9 @@ def move_force():
     """ Linear push. Move until the target force is felt and stop. """
     arm.zero_ft_sensor()
 
+    arm.set_control_mode("parallel")
+    arm.set_solver_parameters(error_scale=0.001, iterations=1)
+    arm.update_stiffness([500,500,500,20,20,20])
     selection_matrix = [1, 1, 0, 1, 1, 1]
     arm.update_selection_matrix(selection_matrix)
 
@@ -94,14 +105,15 @@ def move_force():
 
     ee = arm.end_effector()
 
-    target_force = [0, 0, 5, 0, 0, 0]  # express in the end_effector_link
+    target_force = [0, 0, -5, 0, 0, 0]  # express in the end_effector_link
     # transform = arm.end_effector(tip_link="b_bot_tool0")
     # tf = spalg.convert_wrench(target_force, transform)
     # print(transform)
     # print("TF", tf[:3])
 
     res = arm.execute_compliance_control(ee, target_wrench=target_force,
-                                         max_force_torque=[50., 50., 50., 5., 5., 5.], duration=15,
+                                         max_force_torque=[500., 500., 500., 50., 50., 50.], duration=15,
+                                         stop_at_wrench=target_force,
                                          stop_on_target_force=True)
     print(res)
     print("EE change", ee - arm.end_effector())
