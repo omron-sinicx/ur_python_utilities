@@ -285,7 +285,7 @@ class CompliantController(Arm):
         step_initial_time = rospy.get_time()
 
         result = ExecutionResult.DONE
-        if stop_on_target_force and not stop_at_wrench:
+        if stop_on_target_force and stop_at_wrench is None:
             raise ValueError("'stop_at_wrench' not specify when requesting 'stop_on_target_force'")
         
         if stop_on_target_force:
@@ -304,7 +304,7 @@ class CompliantController(Arm):
 
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
-            current_wrench = self.get_wrench(hand_frame_control=True)
+            current_wrench = self.get_wrench(base_frame_control=True)
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
