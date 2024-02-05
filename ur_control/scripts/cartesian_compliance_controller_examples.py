@@ -94,14 +94,17 @@ def move_force():
     """ Linear push. Move until the target force is felt and stop. """
     arm.zero_ft_sensor()
 
-    arm.set_control_mode("parallel")
-    arm.set_solver_parameters(error_scale=0.001, iterations=1)
-    arm.update_stiffness([500,500,500,20,20,20])
-    selection_matrix = [1, 1, 0, 1, 1, 1]
-    arm.update_selection_matrix(selection_matrix)
+    # arm.set_control_mode("parallel")
+    # selection_matrix = [1, 1, 0, 1, 1, 1]
+    # arm.update_selection_matrix(selection_matrix)
 
-    pd_gains = [0.03, 0.03, 0.03, 1.0, 1.0, 1.0]
-    arm.update_pd_gains(pd_gains)
+    arm.set_control_mode("spring-mass-damper")
+    arm.set_solver_parameters(error_scale=0.001, iterations=1)
+    arm.update_stiffness([1500,1500,1500,100,100,100])
+
+    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    arm.update_pd_gains(p_gains, d_gains)
 
     ee = arm.end_effector()
 
