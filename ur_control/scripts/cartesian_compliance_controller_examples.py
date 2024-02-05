@@ -47,12 +47,13 @@ signal.signal(signal.SIGINT, signal_handler)
 def move_joints():
     q = [1.3506, -1.6493, 1.9597, -1.8814, -1.5652, 1.3323]
     q = [1.4414, -1.7303, 2.145, -1.9863, -1.5656, 1.4397]
+    q = [1.0497, -1.5863, 2.0175, -2.005, -1.5681, 1.0542]
     arm.set_joint_positions(positions=q, target_time=5, wait=True)
 
 
 def move_cartesian():
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
-    arm.set_joint_positions(positions=q, target_time=1, wait=True)
+    arm.set_joint_positions(positions=q, target_time=3, wait=True)
 
     # arm.set_position_control_mode(False)
     # arm.set_control_mode(mode="spring-mass-damper")
@@ -94,29 +95,33 @@ def move_force():
     """ Linear push. Move until the target force is felt and stop. """
     arm.zero_ft_sensor()
 
-    # arm.set_control_mode("parallel")
-    # selection_matrix = [1, 1, 0, 1, 1, 1]
-    # arm.update_selection_matrix(selection_matrix)
+    arm.set_control_mode("parallel")
+    selection_matrix = [1, 1, 0, 1, 1, 1]
+    arm.update_selection_matrix(selection_matrix)
 
-    arm.set_control_mode("spring-mass-damper")
-    arm.set_solver_parameters(error_scale=0.001, iterations=1)
+    # arm.set_control_mode("spring-mass-damper")
+
+    arm.set_solver_parameters(error_scale=0.5, iterations=1)
     arm.update_stiffness([1500,1500,1500,100,100,100])
 
-    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains)
 
     ee = arm.end_effector()
 
     target_force = [0, 0, -5, 0, 0, 0]  # express in the end_effector_link
+    # account for the direction of the force?
+    stop_at_wrench = np.copy(target_force)
+    stop_at_wrench *= -1
     # transform = arm.end_effector(tip_link="b_bot_tool0")
     # tf = spalg.convert_wrench(target_force, transform)
     # print(transform)
     # print("TF", tf[:3])
 
     res = arm.execute_compliance_control(ee, target_wrench=target_force,
-                                         max_force_torque=[500., 500., 500., 50., 50., 50.], duration=15,
-                                         stop_at_wrench=target_force,
+                                         max_force_torque=[30., 30., 30., 4., 4., 4.], duration=15,
+                                         stop_at_wrench=stop_at_wrench,
                                          stop_on_target_force=True)
     print(res)
     print("EE change", ee - arm.end_effector())
@@ -250,7 +255,10 @@ def main():
     arm = CompliantController(namespace=ns,
                               joint_names_prefix=joints_prefix,
                               ee_link=tcp_link,
-                              ft_topic='wrench')
+                              ft_topic='wrench',
+                              gripper_type=None)
+    
+    arm.dashboard_services.activate_ros_control_on_ur()
 
     if args.move_joints:
         move_joints()
