@@ -112,6 +112,9 @@ class CompliantController(Arm):
         if rospy.has_param("use_gazebo_sim"):
             self.is_gazebo_sim = True
 
+        self.rate = rospy.Rate(self.joint_traj_controller.rate)
+        self.min_dt = 1. / self.joint_traj_controller.rate
+
         self.auto_switch_controllers = True  # Safety switching back to safe controllers
 
         self.current_target_pose = np.zeros(7)
@@ -270,11 +273,11 @@ class CompliantController(Arm):
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
                                    auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,
-                                   relative_to_ee=False, stop_at_wrench=np.zeros(6)):
+                                   relative_to_ee=False, stop_at_wrench=None):
 
         # Space out the trajectory points
         trajectory = trajectory.reshape((-1, 7))  # Assuming this format [x,y,z,qx,qy,qz,qw]
-        step_duration = duration / float(trajectory.shape[0])
+        step_duration = max(self.min_dt, duration / float(trajectory.shape[0]))
         trajectory_index = 0
 
         # loop throw target trajectory
@@ -282,7 +285,13 @@ class CompliantController(Arm):
         step_initial_time = rospy.get_time()
 
         result = ExecutionResult.DONE
-        stop_target_wrench_mask = stop_at_wrench != 0
+        if stop_on_target_force and not stop_at_wrench:
+            raise ValueError("'stop_at_wrench' not specify when requesting 'stop_on_target_force'")
+        
+        if stop_on_target_force:
+            stop_at_wrench = np.array(stop_at_wrench)
+            stop_target_wrench_mask = np.flatnonzero(stop_at_wrench)
+            rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
 
         # Publish target wrench only once
         self.set_cartesian_target_wrench(target_wrench)
@@ -293,12 +302,9 @@ class CompliantController(Arm):
         if scale_up_error and max_scale_error:
             self.sliding_error(trajectory[trajectory_index], max_scale_error)
 
-        rate = rospy.Rate(500)
-
-        rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
-            current_wrench = self.get_ee_wrench(base_frame_control=True)
+            current_wrench = self.get_wrench(hand_frame_control=True)
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
@@ -334,7 +340,7 @@ class CompliantController(Arm):
             if func:
                 func(self.end_effector())
 
-            rate.sleep()
+            self.rate.sleep()
 
         if auto_stop:
             # Stop moving
