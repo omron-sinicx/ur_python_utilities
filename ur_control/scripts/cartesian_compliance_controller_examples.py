@@ -73,22 +73,21 @@ def move_cartesian():
     ee = arm.end_effector()
 
     p1 = ee.copy()
-    p1[2] -= 0.01
+    p1[2] -= 0.03
 
     p2 = p1.copy()
     p2[2] += 0.005
 
     trajectory = p1
     # trajectory = np.stack((p1, p2))
-    # trajectory = np.array([-0.02, 0.50, 0.195, -0.00812894,  0.70963372, -0.00882711,  0.70446859])
     target_force = np.zeros(6)
 
     def f(x): return rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(trajectory, target_wrench=target_force, max_force_torque=[50., 50., 50., 5., 5., 5.],
                                          duration=5, func=f, scale_up_error=True, max_scale_error=3.0, auto_stop=False)
-    print("EE change", ee - arm.end_effector())
-    print("ok", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    print("EE total displacement", np.round(ee - arm.end_effector(), 4))
+    print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
 
 
 def move_force():

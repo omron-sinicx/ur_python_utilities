@@ -313,7 +313,6 @@ class CompliantController(Arm):
                     result = ExecutionResult.TERMINATION_CRITERIA
                     break
 
-            # TODO: fix, it should check the sign of the target wrench and the current one too
             rospy.loginfo_throttle(1, 'F/T {}'.format(np.round(current_wrench[:3], 2)))
             if stop_on_target_force and is_more_extreme(current_wrench[stop_target_wrench_mask], stop_at_wrench[stop_target_wrench_mask]):
                 rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 2)) + ' Stopping!')
