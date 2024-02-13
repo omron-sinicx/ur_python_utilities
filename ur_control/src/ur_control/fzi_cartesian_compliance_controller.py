@@ -35,12 +35,14 @@ from geometry_msgs.msg import WrenchStamped, PoseStamped
 
 import dynamic_reconfigure.client
 
+
 def is_more_extreme(value, target):
     if (np.all(value > 0) and np.all(target > 0)):
         return np.all(value > target)
     elif (np.all(value < 0) and np.all(target < 0)):
         return np.all(value < target)
     return False
+
 
 def convert_selection_matrix_to_parameters(selection_matrix):
     return {
@@ -143,7 +145,10 @@ class CompliantController(Arm):
 
             "end_effector_link": dynamic_reconfigure.client.Client("%s%s" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
         }
+        self.param_update_queue = []
         self.update_thread = None
+        self.update_lock = threading.Lock()
+        self.update_condition = threading.Condition()
         self.async_mode = False
 
         self.set_hand_frame_control(False)
@@ -186,22 +191,33 @@ class CompliantController(Arm):
         except Exception as e:
             rospy.logerr("Fail to set_target_pose(): %s" % e)
 
-    def update_controller_parameters(self, parameters: dict):
-        if not self.async_mode and self.update_thread and self.update_thread.isAlive():
-            self.update_thread.join()
+    def publish_parameter_update(self, parameters):
+        try:
+            for param in parameters.keys():
+                rospy.logdebug("Setting parameters %s to the group %s" % (parameters[param], param))
+                self.dyn_config_clients[param].update_configuration(parameters[param])
+        except:
+            pass
 
-        def update():
-            try:
-                for param in parameters.keys():
-                    rospy.logdebug("Setting parameters %s to the group %s" % (parameters[param], param))
-                    self.dyn_config_clients[param].update_configuration(parameters[param])
-            except:
-                pass
+    def __update_controller_parameter_loop__(self):
+        parameters = None
+        with self.update_condition:
+            while not rospy.is_shutdown():
+                while not self.param_update_queue:
+                    self.update_condition.wait()
+                # Lock queue update
+                with self.update_lock:
+                    parameters = self.param_update_queue.pop()
+                self.publish_parameter_update(parameters)
+                parameters = None
+
+    def update_controller_parameters(self, parameters: dict):
         if self.async_mode:
-            self.update_thread = threading.Thread(target=update)
-            self.update_thread.start()
+            with self.update_lock, self.update_condition:
+                self.param_update_queue.append(parameters)
+                self.update_condition.notify()
         else:
-            update()
+            self.publish_parameter_update(parameters)
 
     def update_selection_matrix(self, selection_matrix):
         parameters = convert_selection_matrix_to_parameters(selection_matrix)
@@ -287,7 +303,7 @@ class CompliantController(Arm):
         result = ExecutionResult.DONE
         if stop_on_target_force and stop_at_wrench is None:
             raise ValueError("'stop_at_wrench' not specify when requesting 'stop_on_target_force'")
-        
+
         if stop_on_target_force:
             stop_at_wrench = np.array(stop_at_wrench)
             stop_target_wrench_mask = np.flatnonzero(stop_at_wrench)
