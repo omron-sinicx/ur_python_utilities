@@ -149,6 +149,7 @@ class CompliantController(Arm):
         self.update_thread = None
         self.update_lock = threading.Lock()
         self.update_condition = threading.Condition()
+        self.update_thread_stopped = False
         self.async_mode = False
 
         self.set_hand_frame_control(False)
@@ -156,6 +157,12 @@ class CompliantController(Arm):
         self.min_scale_error = 1.5
 
         rospy.on_shutdown(self.activate_joint_trajectory_controller)
+
+    def __del__(self):
+        # wake up thread and stop it
+        with self.update_condition:
+            self.update_thread_stopped = True
+            self.update_condition.notify_all()
 
     def target_pose_cb(self, data):
         self.current_target_pose = conversions.from_pose_to_list(data.pose)
@@ -168,8 +175,6 @@ class CompliantController(Arm):
                                                           controllers_off=[JOINT_TRAJECTORY_CONTROLLER])
 
     def activate_joint_trajectory_controller(self):
-        if self.update_thread and self.update_thread.isAlive():
-            self.update_thread.join()
         return self.controller_manager.switch_controllers(controllers_on=[JOINT_TRAJECTORY_CONTROLLER],
                                                           controllers_off=[CARTESIAN_COMPLIANCE_CONTROLLER])
 
@@ -194,25 +199,35 @@ class CompliantController(Arm):
     def publish_parameter_update(self, parameters):
         try:
             for param in parameters.keys():
-                rospy.logdebug("Setting parameters %s to the group %s" % (parameters[param], param))
                 self.dyn_config_clients[param].update_configuration(parameters[param])
-        except:
+        except Exception as e:
+            rospy.logerr_throttle(1, f"failed publish_parameter_update {e}")
             pass
 
     def __update_controller_parameter_loop__(self):
-        parameters = None
         with self.update_condition:
             while not rospy.is_shutdown():
-                while not self.param_update_queue:
-                    self.update_condition.wait()
-                # Lock queue update
-                with self.update_lock:
-                    parameters = self.param_update_queue.pop()
-                self.publish_parameter_update(parameters)
-                parameters = None
+                # Sleep until new request is available
+                if not self.param_update_queue:
+                    self.update_condition.wait(timeout=1)
+
+                if self.update_thread_stopped:
+                    return
+
+                if self.param_update_queue:
+                    # Lock queue update
+                    with self.update_lock:
+                        parameters = self.param_update_queue.pop()
+                    if parameters:
+                        self.publish_parameter_update(parameters)
+                        parameters = None
 
     def update_controller_parameters(self, parameters: dict):
         if self.async_mode:
+            if self.update_thread is None or not self.update_thread.is_alive():
+                del self.update_thread
+                self.update_thread = threading.Thread(target=self.__update_controller_parameter_loop__)
+                self.update_thread.start()
             with self.update_lock, self.update_condition:
                 self.param_update_queue.append(parameters)
                 self.update_condition.notify()
