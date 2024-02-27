@@ -1950,22 +1950,24 @@ def quaternion_from_axis_angle(axis_angle):
 
     if math.isclose(angle, 0.0):
         return numpy.array([0, 0, 0, 1.0])
-    
+
     axis = axis_angle / angle
 
     quat = numpy.zeros(4)
     quat[3] = numpy.cos(angle / 2.0)
     quat[:3] = axis * numpy.sin(angle / 2.0)
+    quat *= numpy.sign(quat[3])  # disambiguate sign
     return quat
+
 
 def axis_angle_from_quaternion(quat):
     if quat[3] > 1.0:
         quat[3] = 1.0
     elif quat[3] < -1.0:
         quat[3] = -1.0
-    
+
     den = numpy.sqrt(1.0 - quat[3] * quat[3])
     if math.isclose(den, 0.0):
         return numpy.zeros(3)
-    
+
     return (quat[:3] * 2.0 * math.acos(quat[3])) / den
