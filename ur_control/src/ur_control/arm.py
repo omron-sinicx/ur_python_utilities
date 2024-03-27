@@ -130,7 +130,7 @@ class Arm(object):
         self._flex_trajectory_pub = rospy.Publisher(traj_publisher_flex, JointTrajectory, queue_size=10)
 
         self.joint_traj_controller = JointTrajectoryController(
-            publisher_name=traj_publisher, namespace=self.ns, joint_names=self.joint_names, timeout=0.1)
+            publisher_name=traj_publisher, namespace=self.ns, joint_names=self.joint_names, timeout=1.0)
 
         if gripper is None:
             return
@@ -176,7 +176,7 @@ class Arm(object):
 
         self._zero_ft_filtered = rospy.ServiceProxy('%s/%s/filtered/zero_ftsensor' % (self.ns, self.ft_topic), Empty)
         self._zero_ft_filtered.wait_for_service(rospy.Duration(2.0))
-        
+
         if not rospy.has_param("use_gazebo_sim"):
             self._zero_ft = rospy.ServiceProxy('%s/ur_hardware_interface/zero_ftsensor' % self.ns, Trigger)
             self._zero_ft.wait_for_service(rospy.Duration(2.0))
@@ -382,7 +382,7 @@ class Arm(object):
         acc = None
 
         if velocities is not None:
-            vel = velocities #[velocities] * 6
+            vel = velocities  # [velocities] * 6
         if accelerations is not None:
             acc = [accelerations] * 6
 
