@@ -30,7 +30,7 @@ from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
 from geometry_msgs.msg import WrenchStamped
 
-from ur_control import utils, spalg, conversions, transformations
+from ur_control import filters, utils, spalg, conversions, transformations
 from ur_control.constants import JOINT_ORDER, JOINT_TRAJECTORY_CONTROLLER, FT_SUBSCRIBER, IKFAST, TRAC_IK, \
     DONE, SPEED_LIMIT_EXCEEDED, IK_NOT_FOUND, get_arm_joint_names, \
     BASE_LINK, EE_LINK, KDL, GENERIC_GRIPPER, ROBOTIQ_GRIPPER
@@ -86,7 +86,7 @@ class Arm(object):
         self._joint_effort = dict()
 
         self.current_ft_value = np.zeros(6)
-        self.wrench_queue = collections.deque(maxlen=25)  # store history of FT data
+        self.wrench_queue = collections.deque(maxlen=100)  # store history of FT data
 
         self._robot_urdf = robot_urdf
         self._robot_urdf_package = robot_urdf_package if robot_urdf_package is not None else 'ur_pykdl'
@@ -171,8 +171,10 @@ class Arm(object):
 
     def _init_ft_sensor(self):
         # Publisher of wrench
-        ft_namespace = '%s/%s/filtered' % (self.ns, self.ft_topic)
-        rospy.Subscriber(ft_namespace, WrenchStamped, self.__ft_callback__)
+        ft_namespace = '%s/%s' % (self.ns, self.ft_topic)
+        rospy.Subscriber(ft_namespace, WrenchStamped, self.__ft_callback__, tcp_nodelay=True)
+
+        self.__ft_filter = filters.ButterLowPass(50, 500, 2)
 
         self._zero_ft_filtered = rospy.ServiceProxy('%s/%s/filtered/zero_ftsensor' % (self.ns, self.ft_topic), Empty)
         self._zero_ft_filtered.wait_for_service(rospy.Duration(2.0))
@@ -237,22 +239,6 @@ class Arm(object):
 
 ### Public methods ###
 
-    def get_filtered_ft(self):
-        """ Get measurements from FT Sensor in its default frame of reference.
-            Measurements are filtered with a low-pass filter.
-            Measurements are given in sensors orientation.
-        """
-        if self.current_ft_value is None:
-            raise Exception("FT Sensor not initialized")
-
-        ft_limitter = [300, 300, 300, 30, 30, 30]  # Enforce measurement limits (simulation)
-        ft = self.current_ft_value
-        ft = [
-            ft[i] if abs(ft[i]) < ft_limitter[i] else ft_limitter[i]
-            for i in range(6)
-        ]
-        return np.array(ft)
-
     def get_ee_wrench_hist(self, hist_size=24, hand_frame_control=False):
         if self.current_ft_value is None:
             raise Exception("FT Sensor not initialized")
@@ -268,12 +254,17 @@ class Arm(object):
 
         return np.array(wrench_hist)
 
-    def get_ee_wrench(self, base_frame_control=False, hand_frame_control=False):
+    def get_ee_wrench(self, base_frame_control=False, hand_frame_control=False, filtered=False):
         """ Compute the wrench (force/torque) in task-space """
         if self.current_ft_value is None:
             return np.zeros(6)
 
-        wrench_force = self.current_ft_value
+        if filtered:
+            wrench_filtered = self.__ft_filter(np.array(self.wrench_queue))
+            wrench_force = wrench_filtered[-1, :]
+        else:
+            wrench_force = self.current_ft_value
+
         if not hand_frame_control and not base_frame_control:
             return wrench_force
         elif base_frame_control:

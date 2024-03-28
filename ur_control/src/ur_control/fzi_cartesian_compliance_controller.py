@@ -35,12 +35,14 @@ from geometry_msgs.msg import WrenchStamped, PoseStamped
 
 import dynamic_reconfigure.client
 
+
 def is_more_extreme(value, target):
     if (np.all(value > 0) and np.all(target > 0)):
         return np.all(value > target)
     elif (np.all(value < 0) and np.all(target < 0)):
         return np.all(value < target)
     return False
+
 
 def convert_selection_matrix_to_parameters(selection_matrix):
     return {
@@ -298,7 +300,7 @@ class CompliantController(Arm):
         rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
-            current_wrench = self.get_ee_wrench(base_frame_control=True)
+            current_wrench = self.get_ee_wrench(base_frame_control=True, filtered=True)
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
