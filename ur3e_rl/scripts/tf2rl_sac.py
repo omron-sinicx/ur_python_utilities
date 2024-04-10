@@ -69,24 +69,7 @@ if __name__ == '__main__':
     elif args.env_id == 3:
         args.dir_suffix = "disect_slicing_3d"
         param_file = "simulation/slicing_3d_disect.yaml"
-    elif args.env_id == 4:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn1.yaml"
-    elif args.env_id == 5:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn2.yaml"
-    elif args.env_id == 6:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn3.yaml"
-    elif args.env_id == 7:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn4.yaml"
-    elif args.env_id == 8:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn5.yaml"
-    elif args.env_id == 9:
-        args.dir_suffix = "slicing_3d"
-        param_file = "simulation/slicing_3d_dyn6.yaml"
+
     else:
         raise Exception("invalid env_id")
 

@@ -1,7 +1,6 @@
 
 #!/usr/bin/env python
 
-import copy
 import rospy
 import numpy as np
 
@@ -12,8 +11,6 @@ import threading
 
 from std_srvs.srv import Empty
 from nav_msgs.msg import Odometry
-
-from disect.cutting import load_settings, CuttingSim, Parameter
 
 
 def get_cl_range(range, curriculum_level):

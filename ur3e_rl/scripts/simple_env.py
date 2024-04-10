@@ -82,6 +82,8 @@ if __name__ == '__main__':
     elif args.env_id == 1:
         param_file = "simulation/slicing_3d.yaml"
     elif args.env_id == 2:
+        param_file = "simulation/slicing_1d_disect.yaml"
+    elif args.env_id == 3:
         param_file = "simulation/slicing_3d_disect.yaml"
     else:
         raise Exception("invalid env_id")
