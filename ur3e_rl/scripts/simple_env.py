@@ -32,7 +32,7 @@ class Agent(object):
             return act
         if self.action_type == 11:
             act = np.ones(self.action_size)
-            act[3:] = np.zeros(self.action_size-3)
+            act[[4,6]] = np.zeros(2)
             return act
         if self.action_type == 12:
             act = np.ones(self.action_size)
@@ -81,7 +81,8 @@ if __name__ == '__main__':
     elif args.env_id == 1:
         param_file = "simulation/slicing_3d.yaml"
     else:
-        raise Exception("invalid env_id")
+        param_file = "simulation/slicing_3d.yaml"
+        # raise Exception("invalid env_id")
 
     p = utils.TextColors()
     p.error("GYM Environment:{} ".format(param_file))

@@ -20,7 +20,7 @@ ur3e_gym: #namespace
     agent_control_dt: 0.05
     reset_time: 0.5
     # actions parameters 
-    n_actions: 6
+    n_actions: 7
     action_type: "slicing-3d"
     
     steps_per_episode: 500
@@ -80,7 +80,7 @@ ur3e_gym: #namespace
     target_pose_uncertain: False
     uncertainty_std: [0.001, 0.0]
     random_target_pose: False
-    target_pose: [0.11, 0.50, 0.1565, -0.00812894,  0.70963372, -0.00882711,  0.70446859]
+    target_pose: [0.11, 0.50, 0.1665, -0.00812894,  0.70963372, -0.00882711,  0.70446859]
     
     # Reward parameters
     target_dims: [0,2,4]

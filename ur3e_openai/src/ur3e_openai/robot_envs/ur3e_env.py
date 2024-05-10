@@ -71,7 +71,8 @@ class UR3eEnv(robot_env.RobotGazeboEnv):
         self.ur3e_arm = CompliantController(ft_topic='wrench',
                                             ee_link=self.ee_link,
                                             namespace=self.robot_namespace,
-                                            joint_names_prefix=joint_names_prefix,)
+                                            joint_names_prefix=joint_names_prefix,
+                                            gripper_type=None)
 
         rospy.logdebug("Finished UR3eEnv INIT...")
 
