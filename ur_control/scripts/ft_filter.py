@@ -40,7 +40,7 @@ class FTsensor(object):
 
     def __init__(self, in_topic, namespace="", out_topic=None,
                  sampling_frequency=500, cutoff=5,
-                 order=2, data_window=100, timeout=3.0,
+                 order=2, data_window=50, timeout=3.0,
                  republish=False):
 
         self.ns = namespace
