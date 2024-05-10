@@ -22,6 +22,7 @@
 #
 # Author: Cristian Beltran
 
+import collections
 import threading
 import types
 import rospy
@@ -145,7 +146,7 @@ class CompliantController(Arm):
 
             "end_effector_link": dynamic_reconfigure.client.Client("%s%s" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
         }
-        self.param_update_queue = []
+        self.param_update_queue = collections.deque(maxlen=15)
         self.update_thread = None
         self.update_lock = threading.Lock()
         self.update_condition = threading.Condition()
@@ -160,9 +161,10 @@ class CompliantController(Arm):
 
     def __del__(self):
         # wake up thread and stop it
-        with self.update_condition:
-            self.update_thread_stopped = True
-            self.update_condition.notify_all()
+        if hasattr(self, 'update_condition'):
+            with self.update_condition:
+                self.update_thread_stopped = True
+                self.update_condition.notify_all()
 
     def target_pose_cb(self, data):
         self.current_target_pose = conversions.from_pose_to_list(data.pose)
@@ -205,11 +207,12 @@ class CompliantController(Arm):
             pass
 
     def __update_controller_parameter_loop__(self):
-        with self.update_condition:
+        with self.update_condition: 
             while not rospy.is_shutdown():
                 # Sleep until new request is available
-                if not self.param_update_queue:
-                    self.update_condition.wait(timeout=1)
+                if not self.param_update_queue and not self.update_thread_stopped:
+                        self.update_condition.wait(timeout=1)
+                        return
 
                 if self.update_thread_stopped:
                     return
