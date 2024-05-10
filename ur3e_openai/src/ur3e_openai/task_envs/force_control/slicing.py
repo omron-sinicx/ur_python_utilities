@@ -8,7 +8,7 @@ import numpy as np
 from ur3e_openai.robot_envs.utils import get_board_color
 from ur3e_openai.task_envs.ur3e_force_control import UR3eForceControlEnv
 from ur_control import spalg, transformations
-from ur_control.constants import FORCE_TORQUE_EXCEEDED
+from ur_control.constants import ExecutionResult
 from ur_gazebo.basic_models import get_button_model
 from ur_gazebo.model import Model
 
@@ -62,7 +62,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
 
         self.total_steps = 0
 
-        self.spawn_interval = 5  # 10
+        self.spawn_interval = 1  # 10
         self.cumulated_dist = 0
         self.cumulated_force = 0
         self.cumulated_jerk = 0
@@ -89,7 +89,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
                 reset_motion[2] += self.np_random.uniform(low=np.deg2rad(-0.01), high=np.deg2rad(0.01))
                 reset_motion[4] = self.np_random.uniform(low=np.deg2rad(-10), high=np.deg2rad(10))
                 initial_pose = transformations.transform_pose(self.current_target_pose, reset_motion, rotated_frame=False)
-                self.ur3e_arm.set_target_pose(pose=initial_pose, wait=True, t=self.reset_time)
+                self.ur3e_arm.set_target_pose(pose=initial_pose, wait=True, target_time=self.reset_time)
 
             t1 = threading.Thread(target=reset_pose)
             t2 = threading.Thread(target=self.update_scene)
@@ -147,7 +147,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
     def _is_done(self, observations):
         pose_error = np.abs(observations[:len(self.target_dims)]*self.max_distance)
 
-        collision = self.action_result == FORCE_TORQUE_EXCEEDED
+        collision = self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED
         position_goal_reached = np.all(pose_error < self.goal_threshold)
         fail_on_reward = self.termination_on_negative_reward
         self.out_of_workspace = np.any(pose_error > self.workspace_limit)
@@ -195,7 +195,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
 
     def _get_info(self, obs):
         return {"success": self.goal_reached,
-                "collision": self.action_result == FORCE_TORQUE_EXCEEDED,
+                "collision": self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED,
                 "dist": self.cumulated_dist,
                 "force": self.cumulated_force,
                 "jerk": self.cumulated_jerk,

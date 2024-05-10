@@ -1,5 +1,5 @@
 import numpy as np
-from ur_control.constants import DONE, FORCE_TORQUE_EXCEEDED, IK_NOT_FOUND, SPEED_LIMIT_EXCEEDED
+from ur_control.constants import ExecutionResult
 from ur_control import spalg
 
 
@@ -31,10 +31,10 @@ def slicing_with_vel(self, obs, done):
     r_jerkiness = -1 * jerkiness  # penalize jerkiness
     r_jerkiness = np.clip(r_jerkiness, -1., 0.)
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     # reward discounted by the percentage of steps left for the episode (encourage faster termination)
     # r_done = self.cost_done + (1-self.step_count/self.steps_per_episode) if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
-    r_done = self.cost_done if self.goal_reached and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.cost_done if self.goal_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
     r_step = self.cost_step
@@ -72,10 +72,10 @@ def slicing(self, obs, done):
     r_jerkiness = -1 * jerkiness  # penalize jerkiness
     r_jerkiness = np.clip(r_jerkiness, -1., 0.)
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     # reward discounted by the percentage of steps left for the episode (encourage faster termination)
     # r_done = self.cost_done + (1-self.step_count/self.steps_per_episode) if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
-    r_done = self.cost_done if self.goal_reached and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.cost_done if self.goal_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
     r_step = self.cost_step
@@ -112,11 +112,11 @@ def peg_in_hole(self, obs, done):
     r_jerkiness = -1 * jerkiness  # penalize jerkiness
     r_compliance = compliance  # encourage high compliance
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     # reward discounted by the percentage of steps left for the episode (encourage faster termination)
     # r_done = self.cost_done + (1-self.step_count/self.steps_per_episode) if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
     position_reached = np.all(obs[1:3]*self.max_distance[1:3] < self.position_threshold_cl)
-    r_done = self.cost_done if done and position_reached and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.cost_done if done and position_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
     r_step = self.cost_step
@@ -131,7 +131,7 @@ def dense_distance(self, obs, done):
 
     r_distance = 1 - np.tanh(10.0 * np.linalg.norm(obs[:6]))
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     position_reached = np.all(obs[:3] < self.position_threshold)
     r_done = self.steps_per_episode - self.step_count if done and position_reached else 0.0
     r_step = self.cost_step
@@ -152,7 +152,7 @@ def dense_pft(self, obs, done):
     force = np.average(force, axis=1)
     r_force = 1 - np.tanh(10.0 * np.linalg.norm(force))
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     r_done = self.cost_done + self.steps_per_episode - self.step_count if done else 0.0
 
     reward = 0.25*r_distance + 0.25*r_orientation + 0.5*r_force + r_collision + r_done
@@ -172,8 +172,8 @@ def dense_pdft(self, obs, done):
     norm_force = np.linalg.norm(force) if np.linalg.norm(force) > 2 else 0.0
     r_force = -np.tanh(10.0 * norm_force)
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
-    r_done = self.steps_per_episode - self.step_count if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.steps_per_episode - self.step_count if done and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     reward = self.w_dist*r_distance + self.w_force*r_force + r_collision + r_done + + r_step
     # print("r", self.w_dist*r_distance, self.w_force*r_force, r_collision, r_done)
@@ -194,10 +194,10 @@ def dense_distance_force(self, obs, done):
 
     r_force = -1/(1 + np.exp(-norm_force_torque/2+3))  # s-shaped penalization, no penalization for lower values, max penalization for high values
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     # reward discounted by the percentage of steps left for the episode (encourage faster termination)
     position_reached = np.all(obs[:3]*self.max_distance[:3] < self.position_threshold_cl)
-    r_done = self.cost_done if done and position_reached and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.cost_done if done and position_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
     r_step = self.cost_step
@@ -224,11 +224,11 @@ def dense_distance_velocity_force(self, obs, done):
     r_force = -1/(1 + np.exp(-norm_force_torque/2+3))  # s-shaped penalization, no penalization for lower values, max penalization for high values
     # print(round(r_distance_velocity, 4), round(r_force, 4))
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
     # reward discounted by the percentage of steps left for the episode (encourage faster termination)
     # r_done = self.cost_done + (1-self.step_count/self.steps_per_episode) if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
     position_reached = np.all(obs[:3]*self.max_distance[:3] < self.position_threshold_cl)
-    r_done = self.cost_done if done and position_reached and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.cost_done if done and position_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
     r_step = self.cost_step
@@ -250,8 +250,8 @@ def dense_factors(self, obs, done):
     norm_force_torque = np.linalg.norm(force)
     r_force = 1 - np.tanh(10.0 * norm_force_torque)
 
-    r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
-    r_done = self.steps_per_episode if done and self.action_result != FORCE_TORQUE_EXCEEDED else 0.0
+    r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
+    r_done = self.steps_per_episode if done and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     reward = r_distance * r_force + r_collision + r_done
     return reward, [r_distance * r_force, r_collision, r_done]
@@ -319,13 +319,13 @@ def distance_force_action_step_goal(self, obs, done, norm='l1l2'):
 
     done_reward = self.cost_goal + 100*(1-self.step_count/float(self.steps_per_episode)) if ground_true(self) else 0
 
-    if self.action_result == SPEED_LIMIT_EXCEEDED:
+    if self.action_result == ExecutionResult.SPEED_LIMIT_EXCEEDED:
         speed_cost += self.cost_speed_violation
 
-    elif self.action_result == IK_NOT_FOUND:
+    elif self.action_result == ExecutionResult.IK_NOT_FOUND:
         ik_cost += self.cost_ik_violation
 
-    elif self.action_result == FORCE_TORQUE_EXCEEDED:
+    elif self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED:
         collision_cost += self.cost_collision
 
     reward += ik_cost + speed_cost + collision_cost + done_reward

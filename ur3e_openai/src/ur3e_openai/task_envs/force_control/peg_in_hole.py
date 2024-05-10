@@ -8,7 +8,7 @@ from ur3e_openai.robot_envs.utils import get_board_color
 
 from ur3e_openai.task_envs.ur3e_force_control import UR3eForceControlEnv
 from ur_control import transformations
-from ur_control.constants import FORCE_TORQUE_EXCEEDED
+from ur_control.constants import ExecutionResult
 from ur_gazebo.basic_models import get_peg_board_model
 from ur_gazebo.model import Model
 
@@ -247,7 +247,7 @@ class UR3ePegInHoleEnv2(UR3eForceControlEnv):
 
     def _is_done(self, observations):
         pose_error = np.abs(observations[:6]*self.max_distance)
-        if self.action_result == FORCE_TORQUE_EXCEEDED:
+        if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED:
             self.logger.error("Collision!")
 
         if self.termination_on_negative_reward:
@@ -277,7 +277,7 @@ class UR3ePegInHoleEnv2(UR3eForceControlEnv):
             if self.step_count == self.steps_per_episode-1:
                 self.logger.error("Fail!: %s" % np.round(pose_error[:3], 4))
             return (position_reached and self.stage == 1) \
-                or self.action_result == FORCE_TORQUE_EXCEEDED  # Stop on collision
+                or self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED  # Stop on collision
         else:
             position_reached = np.all(pose_error[:3] < self.position_threshold_cl)
             if self.real_robot and self.step_count % 100 == 0:
@@ -300,10 +300,10 @@ class UR3ePegInHoleEnv2(UR3eForceControlEnv):
             if self.step_count == self.steps_per_episode-1:
                 self.logger.error("Fail!: %s" % np.round(pose_error[:3], 4))
             return (position_reached) \
-                or self.action_result == FORCE_TORQUE_EXCEEDED  # Stop on collision
+                or self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED  # Stop on collision
 
     def _get_info(self):
-        if self.action_result == FORCE_TORQUE_EXCEEDED:
+        if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED:
             self.logger.error("Collision!")
             return "collision"
         return {}

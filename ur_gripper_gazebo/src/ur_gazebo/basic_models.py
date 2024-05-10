@@ -1,6 +1,9 @@
 # Basic models for dynamic spawn/despawn
 #
 # Author: Cristian C Beltran-Hernandez
+import numpy as np
+
+
 SPHERE = '<?xml version="1.0" ?> \
 <sdf version="1.5"> \
   <model name="%s"> \
@@ -528,7 +531,7 @@ BUTTON = """
           </friction>
           <contact>
             <ode> 
-              <kp>1.5e+5</kp> 
+              <kp>4e+5</kp> 
               <kd>1</kd> 
               <max_vel>0.01</max_vel> 
               <min_depth>0.0</min_depth> 

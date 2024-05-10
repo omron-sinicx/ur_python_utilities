@@ -34,7 +34,7 @@ from ur3e_openai.robot_envs import ur3e_env
 from gym import spaces
 import ur3e_openai.cost_utils as cost
 from ur_control import conversions, transformations, spalg
-from ur_control.constants import FORCE_TORQUE_EXCEEDED, IK_NOT_FOUND
+from ur_control.constants import ExecutionResult
 import numpy as np
 import rospy
 import datetime
@@ -228,8 +228,8 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
             jerkiness_obs = ee_jerkiness
 
         if self.ft_hist:
-            force_torque = (self.ur3e_arm.get_ee_wrench_hist(
-                self.wrench_hist_size) - target_force) / self.controller.max_force_torque
+            force_torque = (self.ur3e_arm.get_wrench_history(
+                self.wrench_hist_size, hand_frame_control=True) - target_force) / self.controller.max_force_torque
             force_torque = np.array([force_torque[:, i] for i in self.target_dims])
         else:
             force_torque = (self.ur3e_arm.get_ee_wrench() -
@@ -341,8 +341,8 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
                                               wait=True,
                                               t=self.reset_time)
             # print("center q", np.round(self.ur3e_arm.end_effector(), 4).tolist())
-            res = IK_NOT_FOUND
-            while (res == IK_NOT_FOUND):
+            res = ExecutionResult.IK_NOT_FOUND
+            while (res == ExecutionResult.IK_NOT_FOUND):
                 self._randomize_initial_pose()
                 res = self.ur3e_arm.set_target_pose(pose=self.rand_initial_pose,
                                                     wait=True,
@@ -481,7 +481,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
         reward = 0
         reward_details = []
         if self.reward_type == 'sparse':
-            r_collision = self.cost_collision if self.action_result == FORCE_TORQUE_EXCEEDED else 0.0
+            r_collision = self.cost_collision if self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
             r_sparse = 1.0 if done else 0.0
             reward = r_sparse + r_collision
             reward_details = [r_sparse, r_collision]
@@ -531,7 +531,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
             return True
 
         done = (position_reached and orientation_reached) \
-            or self.action_result == FORCE_TORQUE_EXCEEDED
+            or self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED
             
         if done:
             self.controller.stop()
