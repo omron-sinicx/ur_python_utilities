@@ -228,8 +228,9 @@ class CompliantController(Arm):
                 del self.update_thread
                 self.update_thread = threading.Thread(target=self.__update_controller_parameter_loop__)
                 self.update_thread.start()
-            with self.update_lock, self.update_condition:
+            with self.update_lock:
                 self.param_update_queue.append(parameters)
+            with self.update_condition:
                 self.update_condition.notify()
         else:
             self.publish_parameter_update(parameters)
@@ -300,7 +301,7 @@ class CompliantController(Arm):
             else:
                 no_motion_count = 0
 
-    @switch_cartesian_controllers
+    # @switch_cartesian_controllers
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
                                    auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,
