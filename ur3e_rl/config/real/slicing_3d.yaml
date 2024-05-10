@@ -20,7 +20,7 @@ ur3e_gym: #namespace
     agent_control_dt: 0.05
     reset_time: 0.5
     # actions parameters 
-    n_actions: 6
+    n_actions: 7
     action_type: "slicing-3d"
     
     steps_per_episode: 500
