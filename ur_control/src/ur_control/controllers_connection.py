@@ -114,9 +114,12 @@ class ControllersConnection():
             """
             rospy.logdebug("Switch Result==>" + str(switch_result.ok))
 
+            if not switch_result.ok:  # Return if service failed
+                return False
+
             # Check that the controllers are running before returning
             start_time = rospy.get_time()
-            while (rospy.get_time() - start_time) < 5.0:
+            while (rospy.get_time() - start_time) < 5.0 and not rospy.is_shutdown():
                 all_running = True
                 for controller in controllers_on:
                     if self.get_controller_state(controller) != "running":
