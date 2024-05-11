@@ -304,7 +304,7 @@ class CompliantController(Arm):
             else:
                 no_motion_count = 0
 
-    # @switch_cartesian_controllers
+    @switch_cartesian_controllers
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
                                    auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,

@@ -173,7 +173,7 @@ class ComplianceController(controller.Controller):
         """
         # w.r.t end effector link
         stiff_x = np.interp(actions[0], [0, 1], [500, 2000])
-        stiff_ay = np.interp(actions[1], [0, 1], [20, 500])
+        stiff_ay = np.interp(actions[1], [0, 1], [20, 50])
         stiff_act = np.array([stiff_x, 1000, 1000, 40, stiff_ay, 40], dtype=int)
         
         # w.r.t base link
