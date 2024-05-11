@@ -62,9 +62,9 @@ class FTsensor(object):
         self.wrench_offset = np.zeros(6) if self.wrench_offset is None else self.wrench_offset
 
         # Publisher to outward topic
-        self.pub = rospy.Publisher(self.out_topic, WrenchStamped, queue_size=10)
+        self.pub = rospy.Publisher(self.out_topic, WrenchStamped, queue_size=1)
         # Publish a wrench transformed/converted to a TCP point
-        self.pub_tcp = rospy.Publisher(self.out_tcp_topic, WrenchStamped, queue_size=10)
+        self.pub_tcp = rospy.Publisher(self.out_tcp_topic, WrenchStamped, queue_size=1)
 
         # Service for zeroing the filtered signal
         rospy.Service(self.out_topic + "zero_ftsensor", Empty, self._srv_zeroing)
@@ -79,7 +79,7 @@ class FTsensor(object):
         self.data_queue = collections.deque(maxlen=self.data_window)
 
         # Subscribe to incoming topic
-        rospy.Subscriber(self.in_topic, WrenchStamped, self.raw_wrench_cb)
+        rospy.Subscriber(self.in_topic, WrenchStamped, self.raw_wrench_cb, queue_size=1)
 
         rospy.loginfo('FT filter successfully initialized')
         rospy.sleep(1)  # wait some time to fill the filter
