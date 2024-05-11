@@ -70,11 +70,11 @@ class ComplianceController(controller.Controller):
         if action_type == "admittance":
             # A. stiffness + pd_gains
             self.set_admittance_parameters(actions)
-        
+
         elif action_type == "parallel":
             # B. selection matrix + pd_gains
             self.set_parallel_parameters(actions)
-        
+
         elif action_type == "slicing-1d-2act":
             # C. slicing
             self.set_slicing_1d_parameters(actions[:2])
@@ -86,7 +86,7 @@ class ComplianceController(controller.Controller):
             attractor_strength = np.interp(actions[-3:], [-1, 1], [0, 1.0])
             # remaining distance scale by attractor strength
             target_pose[:3] = self.ur3e_arm.end_effector()[:3] + ((target[:3] - self.ur3e_arm.end_effector()[:3]) * attractor_strength)
-        
+
         elif action_type == "slicing-3d":
             # C. slicing
             self.set_slicing_3d_parameters(actions[:4])
@@ -96,12 +96,12 @@ class ComplianceController(controller.Controller):
             x_cmd = np.interp(actions[4], [-1, 1], [-1.0*twist_limit[0], twist_limit[0]])
             z_cmd = np.interp(actions[5], [-1, 1], [-1.0*twist_limit[0], twist_limit[0]])
             ay_cmd = np.interp(actions[6], [-1, 1], [-1.0*twist_limit[1], twist_limit[1]])
-            self.added_motion_command[0] += x_cmd # translation in x
-            self.added_motion_command[2] -= z_cmd # translation in z
-            self.added_motion_command[4] += ay_cmd # rotation in ay
+            self.added_motion_command[0] += x_cmd  # translation in x
+            self.added_motion_command[2] -= z_cmd  # translation in z
+            self.added_motion_command[4] += ay_cmd  # rotation in ay
 
             target_pose = transformations.transform_pose(target_pose, self.added_motion_command, rotated_frame=False)
-        
+
         else:
             raise ValueError("Invalid action_type %s" % action_type)
 
@@ -168,19 +168,19 @@ class ComplianceController(controller.Controller):
             position control for remaining directions
 
             Target position all direction except x and ay
-            
+
             Goal: optimize force control for speed and minimizing contact force
         """
         # w.r.t end effector link
-        stiff_x = np.interp(actions[0], [0, 1], [500, 2000])
-        stiff_ay = np.interp(actions[1], [0, 1], [20, 50])
+        stiff_x = np.interp(actions[0], [0, 1], [500, 4000])
+        stiff_ay = np.interp(actions[1], [0, 1], [20, 100])
         stiff_act = np.array([stiff_x, 1000, 1000, 40, stiff_ay, 40], dtype=int)
-        
+
         # w.r.t base link
         p_gains_z = np.interp(actions[2], [0, 1], [0.01, 0.05])
         p_gains_ay = np.interp(actions[3], [0, 1], [0.1, 1.5])
         p_gains_act = np.array([0.1, 0.1, round(p_gains_z, 3), 1.0, round(p_gains_ay, 2), 1.0])
-        
+
         self.ur3e_arm.update_selection_matrix(np.array([1, 1, 0.5, 1, 0.5, 1]))
         self.ur3e_arm.update_stiffness(stiff_act)
         self.ur3e_arm.update_pd_gains(p_gains_act)
