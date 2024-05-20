@@ -37,16 +37,16 @@ def slicing_with_vel(self, obs, done):
     r_done = self.cost_done if self.goal_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
-    r_step = self.cost_step
+    r_step = self.cost_step if np.abs(obs[1]*self.max_distance[1]) > self.goal_threshold[1] else 1.0
 
-    weights = [self.w_dist, self.w_force, self.w_jerkiness, self.w_velocity]
+    weights = [self.w_dist, self.w_force, self.w_jerkiness, self.w_velocity, 1.0]
     w_norm1 = weights / np.linalg.norm(weights, ord=1)
 
     # reward components
-    reward = w_norm1[0]*r_distance + w_norm1[1]*r_force + w_norm1[2]*r_jerkiness + w_norm1[3]*r_velocity
+    reward = w_norm1[0]*r_distance + w_norm1[1]*r_force + w_norm1[2]*r_jerkiness + w_norm1[3]*r_velocity + w_norm1[4]*r_step
     
     # episode termination reward/penalization
-    reward += r_collision + r_done + r_step 
+    reward += r_collision + r_done  
     
     # print('r', round(reward, 2), round(r_distance, 2), round(r_force, 2), round(r_jerkiness, 2), round(r_velocity, 2))
 
@@ -78,7 +78,7 @@ def slicing(self, obs, done):
     r_done = self.cost_done if self.goal_reached and self.action_result != ExecutionResult.FORCE_TORQUE_EXCEEDED else 0.0
 
     # encourage faster termination
-    r_step = self.cost_step
+    r_step = self.cost_step if np.abs(obs[1]*self.max_distance[1]) > self.goal_threshold[1] else 1.0
 
     weights = [self.w_dist, self.w_force, self.w_jerkiness, 1.0]
     w_norm1 = weights / np.linalg.norm(weights, ord=1)
@@ -89,7 +89,7 @@ def slicing(self, obs, done):
     # episode termination reward/penalization
     reward += r_collision + r_done 
 
-    # print('r', round(reward, 2), round(r_distance, 2), round(r_force, 2), round(r_jerkiness, 2))
+    # print('r', round(reward, 2), round(r_distance, 2), round(r_force, 2), round(r_jerkiness, 2), round(r_step, 2))
     return reward, [r_distance, r_force, r_jerkiness, 0.0, r_step, r_collision, r_done]
 
 

@@ -27,10 +27,10 @@ if __name__ == '__main__':
     parser.add_argument('-e', '--env_id', type=int, help='environment ID', default=None)
     parser.set_defaults(batch_size=256)
     parser.set_defaults(n_warmup=1000)  # still don't know what it this for
-    parser.set_defaults(max_steps=100100)  # 10000 for training 200 for evaluation
+    parser.set_defaults(max_steps=50100)  # 10000 for training 200 for evaluation
     parser.set_defaults(save_model_interval=5000)
-    parser.set_defaults(test_interval=1e10)  # 1e4 for training 200 for evaluation
-    parser.set_defaults(test_episodes=1)
+    parser.set_defaults(test_interval=2500)  # 1e4 for training 200 for evaluation
+    parser.set_defaults(test_episodes=10)
     parser.set_defaults(normalize_obs=False)
     parser.set_defaults(auto_alpha=False) # ON vs OFF
     parser.set_defaults(use_prioritized_rb=True)
@@ -125,7 +125,7 @@ if __name__ == '__main__':
         lr=lr,
         update_interval=update_interval,
         )
-    trainer = Trainer(policy, env, args, test_env=None, seed=seed)
+    trainer = Trainer(policy, env, args, test_env=None, seed=seed, save_best_policy=True)
     outdir = trainer._output_dir
     rospy.set_param('ur3e_gym/output_dir', outdir)
     log_ros_params(outdir)

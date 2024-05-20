@@ -91,8 +91,8 @@ ur3e_gym: #namespace
     termination_reward_threshold: -300 # new -500
 
     cost:
-        collision: -100.0
-        done: 100
+        collision: -10.0
+        done: 1.0
         step: -1.0
         l1: 0.1
         l2: 2.0

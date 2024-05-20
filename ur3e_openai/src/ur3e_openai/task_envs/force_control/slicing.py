@@ -62,7 +62,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
 
         self.total_steps = 0
 
-        self.spawn_interval = 1  # 10
+        self.spawn_interval = 3  # 10
         self.cumulated_dist = 0
         self.cumulated_force = 0
         self.cumulated_jerk = 0
@@ -146,7 +146,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
 
     def _is_done(self, observations):
         pose_error = np.abs(observations[:len(self.target_dims)]*self.max_distance)
-        rospy.loginfo_throttle(1, f"pose error {pose_error}")
+        # rospy.loginfo_throttle(1, f"pose error {pose_error}")
 
         collision = self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED
         position_goal_reached = np.all(pose_error < self.goal_threshold)
