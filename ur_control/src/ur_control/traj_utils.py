@@ -199,7 +199,7 @@ def compute_trajectory(initial_pose, plane, radius, radius_direction, steps=100,
         target_orientation = compute_rotation_wiggle(target_pose[3:], wiggle_direction, wiggle_angle, steps, wiggle_revolutions)
         trajectory = [np.concatenate([tp, to]) for tp, to in zip(trajectory, target_orientation)]
 
-    return trajectory
+    return np.array(trajectory)
 
 
 def compute_1d_sinusoidal_trajectory(num_of_points, amplitude=0.01, period=1):
