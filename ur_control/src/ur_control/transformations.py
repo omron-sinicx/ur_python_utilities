@@ -1956,7 +1956,6 @@ def quaternion_from_axis_angle(axis_angle):
     quat = numpy.zeros(4)
     quat[3] = numpy.cos(angle / 2.0)
     quat[:3] = axis * numpy.sin(angle / 2.0)
-    quat *= numpy.sign(quat[3])  # disambiguate sign
     return quat
 
 
