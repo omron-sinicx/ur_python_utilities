@@ -226,12 +226,12 @@ class CompliantController(Arm):
 
     def update_controller_parameters(self, parameters: dict):
         if self.async_mode:
+            with self.update_lock:
+                self.param_update_queue.append(parameters)
             if self.update_thread is None or not self.update_thread.is_alive():
                 del self.update_thread
                 self.update_thread = threading.Thread(target=self.__update_controller_parameter_loop__)
                 self.update_thread.start()
-            with self.update_lock:
-                self.param_update_queue.append(parameters)
             with self.update_condition:
                 self.update_condition.notify()
         else:
