@@ -1960,13 +1960,35 @@ def quaternion_from_axis_angle(axis_angle):
 
 
 def axis_angle_from_quaternion(quat):
-    if quat[3] > 1.0:
-        quat[3] = 1.0
-    elif quat[3] < -1.0:
-        quat[3] = -1.0
+    """
+    Converts quaternion to consistent axis-angle exponential coordinates.
+    Returns a unit vector direction scaled by its angle in radians.
+    Ensures consistent results for q and -q.
 
-    den = numpy.sqrt(1.0 - quat[3] * quat[3])
-    if math.isclose(den, 0.0):
+    :param quat: Quaternion as a numpy array [x, y, z, w]
+    :return: 3D vector representing the rotation, where the direction is the axis
+             and the magnitude is the angle in radians
+    """
+    w, x, y, z = quat[3], quat[0], quat[1], quat[2]
+
+    angle = 2 * numpy.arccos(numpy.clip(abs(w), 0, 1))
+
+    if numpy.isclose(angle, 0, atol=1e-8):
         return numpy.zeros(3)
 
-    return (quat[:3] * 2.0 * math.acos(quat[3])) / den
+    # Calculate the axis
+    axis = numpy.array([x, y, z])
+    axis_norm = numpy.linalg.norm(axis)
+
+    if axis_norm < 1e-8:
+        # If the axis is very close to zero, choose a default axis
+        axis = numpy.array([1, 0, 0])
+    else:
+        axis /= axis_norm
+
+    # Ensure consistent direction of the axis
+    if axis[0] < 0 or (numpy.isclose(axis[0], 0) and axis[1] < 0) or (numpy.isclose(axis[0], 0) and numpy.isclose(axis[1], 0) and axis[2] < 0):
+        axis = -axis
+        angle = 2 * numpy.pi - angle
+
+    return axis * angle
