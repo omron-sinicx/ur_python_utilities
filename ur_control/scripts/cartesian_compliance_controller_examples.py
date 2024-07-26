@@ -48,7 +48,8 @@ def move_joints():
     q = [1.3506, -1.6493, 1.9597, -1.8814, -1.5652, 1.3323]
     q = [1.4414, -1.7303, 2.145, -1.9863, -1.5656, 1.4397]
     q = [1.0497, -1.5863, 2.0175, -2.005, -1.5681, 1.0542]
-    arm.set_joint_positions(positions=q, target_time=5, wait=True)
+    q = [1.4817, -2.0874, 1.7722, -1.2554, -1.5669, 0.0189]
+    arm.set_joint_positions(positions=q, target_time=3, wait=True)
 
 
 def move_cartesian():
@@ -60,7 +61,7 @@ def move_cartesian():
     arm.set_position_control_mode(True)
     arm.set_control_mode(mode="parallel")
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
-    arm.update_stiffness([1500,1500,1500,100,100,100])
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
     selection_matrix = np.ones(6)
@@ -101,7 +102,7 @@ def move_force():
     # arm.set_control_mode("spring-mass-damper")
 
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
-    arm.update_stiffness([1500,1500,1500,100,100,100])
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
@@ -161,15 +162,40 @@ def admittance_control():
 
     rospy.loginfo("STOP ADMITTANCE")
 
+
 def free_drive():
     rospy.loginfo("START FREE DRIVE")
+    rospy.sleep(0.5)
     arm.zero_ft_sensor()
-    arm.set_control_mode("parallel")
-    selection_matrix = [0., 0., 0., 1., 1., 1.]
-    arm.update_selection_matrix(selection_matrix)
+    # arm.set_control_mode("parallel")
+    arm.set_control_mode("spring-mass-damper")
+    # arm.set_hand_frame_control(False)
+    # arm.set_end_effector_link("b_bot_tool0")
+    # selection_matrix = [0., 0., 0., 1., 1., 1.]
+    # selection_matrix = [1., 1., 1., 0., 0., 0.]
+    # arm.update_selection_matrix(selection_matrix)
+    # 0.8 is vibrating
+    arm.set_solver_parameters(error_scale=1.0, iterations=1.0)
+    # pd_gains = [0.03, 0.03, 0.03, 1.0, 1.0, 1.0]
+    # pd_gains = [0.06, 0.06, 0.06, 1.5, 1.5, 1.5] # stiff
+    pd_gains = [0.1, 0.1, 0.1, 2.0, 2.0, 3.0]  # flex
+    d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
+    # d_gains = [0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+    # d_gains = [0.001, 0.001, 0.001, 0.001, 0.001, 0.001]  # good with p0.1 e_s0.8 ite1.0
+    # d_gains = [0.0001, 0.0001, 0.0001, 0, 0, 0]
+    # pd_gains = [0.08, 0.08, 0.08, 1.5, 1.5, 1.5]
+    arm.update_pd_gains(pd_gains, d_gains)
+    # arm.update_stiffness([10, 10, 10, 10, 10, 10])
+    # arm.update_stiffness([1000, 1000, 1000, 50, 50, 20])
+    # arm.update_stiffness([250, 250, 250, 5, 5, 5])  # 10 for pos can make it drift
+    arm.update_stiffness([100, 100, 100, 5, 5, 5])  # 10 for pos can make it drift
 
-    pd_gains = [0.03, 0.03, 0.03, 1.0, 1.0, 1.0]
-    arm.update_pd_gains(pd_gains)
+
+# mapping parameter space vs vibration
+# how to reduce vibration...
+# TODO: rotation is wrong!
+# add wrench feedback
+#
 
     ee = arm.end_effector()
 
@@ -177,7 +203,7 @@ def free_drive():
     target_force[1] += 0
 
     res = arm.execute_compliance_control(ee, target_wrench=target_force,
-                                         max_force_torque=[50., 50., 50., 5., 5., 5.], duration=15,
+                                         max_force_torque=[50., 50., 50., 5., 5., 5.], duration=60,
                                          stop_on_target_force=False)
     print(res)
     print("EE change", ee - arm.end_effector())
@@ -196,12 +222,13 @@ def test():
         arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
         arm.move_relative(transformation=[0, 0.01, 0, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
 
+
 def enable_compliance_control():
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(q, t=1, wait=True)
 
     arm.zero_ft_sensor()
-    
+
     # arm.set_control_mode(mode="parallel")
     arm.set_control_mode(mode="spring-mass-damper")
     # arm.set_position_control_mode(True)
@@ -216,6 +243,7 @@ def enable_compliance_control():
         rospy.sleep(1)
 
     arm.activate_joint_trajectory_controller()
+
 
 def main():
     """ Main function to be run. """
@@ -245,6 +273,8 @@ def main():
     ns = "None"
     joints_prefix = None
     tcp_link = 'gripper_tip_link'
+    # tcp_link = 'wrist_3_link'
+    # tcp_link = 'tool0'
 
     if args.namespace:
         ns = args.namespace
