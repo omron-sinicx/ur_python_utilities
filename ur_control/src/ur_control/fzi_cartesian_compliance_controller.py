@@ -207,22 +207,22 @@ class CompliantController(Arm):
             pass
 
     def __update_controller_parameter_loop__(self):
-        with self.update_condition:
-            while not rospy.is_shutdown():
-                if self.update_thread_stopped:
-                    return
+        while not rospy.is_shutdown():
+            if self.update_thread_stopped:
+                return
 
-                # Sleep until new request is available
-                if not self.param_update_queue:
+            # Sleep until new request is available
+            if not self.param_update_queue:
+                with self.update_condition:
                     self.update_condition.wait(timeout=0.5)
-                    return
-                else:
-                    # Lock queue update
-                    with self.update_lock:
-                        parameters = self.param_update_queue.pop()
-                    if parameters:
-                        self.publish_parameter_update(parameters)
-                        parameters = None
+                return
+            else:
+                # Lock queue update
+                with self.update_lock:
+                    parameters = self.param_update_queue.pop()
+                if parameters:
+                    self.publish_parameter_update(parameters)
+                    parameters = None
 
     def update_controller_parameters(self, parameters: dict):
         if self.async_mode:
