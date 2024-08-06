@@ -62,6 +62,7 @@ def move_cartesian():
     arm.set_control_mode(mode="parallel")
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
     selection_matrix = np.ones(6)
@@ -102,6 +103,7 @@ def move_force():
     # arm.set_control_mode("spring-mass-damper")
 
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
@@ -214,9 +216,12 @@ def test():
     # start here
     move_joints()
 
+    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    # Move down (cut)
+    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
     for _ in range(3):
         # Move down (cut)
-        arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, duration=0.5, wait=True)
+        arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
 
         # Move back up and to the next initial pose
         arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
@@ -268,9 +273,7 @@ def main():
                         help='Namespace of arm', default=None)
     args = parser.parse_args()
 
-    rospy.init_node('ur3e_compliance_control')
-
-    ns = "None"
+    ns = ""
     joints_prefix = None
     tcp_link = 'gripper_tip_link'
     # tcp_link = 'wrist_3_link'
