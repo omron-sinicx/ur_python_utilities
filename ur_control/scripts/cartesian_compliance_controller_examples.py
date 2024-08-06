@@ -825,8 +825,6 @@ def main():
     args = parser.parse_args()
 
     ns = ""
-
-    ns = ""
     joints_prefix = None
     tcp_link = 'gripper_tip_link'
     # tcp_link = 'wrist_3_link'
