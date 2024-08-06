@@ -122,6 +122,7 @@ class CompliantController(Arm):
 
         self.current_target_pose = np.zeros(7)
         self.current_wrench_pose = np.zeros(6)
+        self.current_target_wrench = np.zeros(6)
 
         # Monitor external goals
         rospy.Subscriber('%s%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
@@ -328,7 +329,9 @@ class CompliantController(Arm):
             rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
 
         # Publish target wrench only once
-        self.set_cartesian_target_wrench(target_wrench)
+        target_wrench = target_wrench.reshape((-1, 6))  # Assuming this format [fx,fy,fz,tx,ty,tz]
+
+        self.set_cartesian_target_wrench(target_wrench[trajectory_index])
 
         # Publish first trajectory point
         self.set_cartesian_target_pose(trajectory[trajectory_index])
@@ -366,6 +369,7 @@ class CompliantController(Arm):
                     break
                 # push next point to the controller
                 self.set_cartesian_target_pose(trajectory[trajectory_index])
+                self.set_cartesian_target_wrench(target_wrench[trajectory_index])
 
                 if scale_up_error and max_scale_error:
                     self.sliding_error(trajectory[trajectory_index], max_scale_error)

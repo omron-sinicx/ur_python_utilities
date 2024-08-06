@@ -214,18 +214,17 @@ def test():
     # start here
     move_joints()
 
-    for _ in range(3):
-        # Move down (cut)
-        arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, duration=0.5, wait=True)
+    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    # Move down (cut)
+    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
 
-        # Move back up and to the next initial pose
-        arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
-        arm.move_relative(transformation=[0, 0.01, 0, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
+    # Move back up and to the next initial pose
+    arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
+    arm.move_relative(transformation=[0, 0.01, 0, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
 
-
-def enable_compliance_control():
+    arm.set_joint_positions(positions=q, target_time=1, wait=True)
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
-    arm.set_joint_positions(q, t=1, wait=True)
+    arm.set_joint_positions(positions=q, target_time=1, wait=True)
 
     arm.zero_ft_sensor()
 
@@ -268,9 +267,9 @@ def main():
                         help='Namespace of arm', default=None)
     args = parser.parse_args()
 
-    rospy.init_node('ur3e_compliance_control')
+    ns = ""
 
-    ns = "None"
+    ns = ""
     joints_prefix = None
     tcp_link = 'gripper_tip_link'
     # tcp_link = 'wrist_3_link'
@@ -284,9 +283,9 @@ def main():
     arm = CompliantController(namespace=ns,
                               joint_names_prefix=joints_prefix,
                               ee_link=tcp_link,
-                              ft_topic='wrench',
+
                               gripper_type=None)
-    
+
     arm.dashboard_services.activate_ros_control_on_ur()
 
     if args.move_joints:

@@ -185,7 +185,7 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--robotiq_gripper', action='store_true', help='enable Robotiq gripper commands')
+        '--gripper', type=str, help='enable gripper commands. Valid options [robotiq, generic]', default=None,)
     parser.add_argument(
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
@@ -199,7 +199,7 @@ See help inside the example with the '?' key for key bindings.
 
     tcp_link = args.tcp
     joints_prefix = args.namespace + '_' if args.namespace else None
-    gripper = GripperType.ROBOTIQ if args.robotiq_gripper else GripperType.GENERIC
+    gripper = args.gripper
 
     global arm
     arm = Arm(namespace=args.namespace,
