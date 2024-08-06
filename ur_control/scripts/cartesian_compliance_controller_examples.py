@@ -824,7 +824,7 @@ def main():
                         help='Namespace of arm', default=None)
     args = parser.parse_args()
 
-    rospy.init_node('ur3e_compliance_control')
+    ns = ""
 
     ns = ""
     joints_prefix = None
