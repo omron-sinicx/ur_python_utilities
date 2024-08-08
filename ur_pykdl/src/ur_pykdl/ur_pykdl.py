@@ -148,7 +148,7 @@ class ur_kinematics(object):
     def end_effector_transform(self, joint_values, tip_link=None):
         pose = self.forward(joint_values, tip_link)
         translation = np.array([pose[:3]])
-        transform = transformations.quaternion_matrix(pose[3:])
+        transform = transformations.rotation_matrix_from_quaternion(pose[3:])
         transform[:3, 3] = translation
         return transform
 
