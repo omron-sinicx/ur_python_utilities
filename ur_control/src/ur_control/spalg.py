@@ -494,8 +494,8 @@ def quaternions_orientation_error(Qd, Qc):
     else:
         assert isinstance(Qd, (list, np.ndarray)), "type: " + str(type(Qd))
         assert isinstance(Qc, (list, np.ndarray)), "type: " + str(type(Qd))
-        q1 = tr.vector_to_pyquaternion(Qd)
-        q2 = tr.vector_to_pyquaternion(Qc)
+        q1 = Quaternion(np.roll(Qd, -1))
+        q2 = Quaternion(np.roll(Qc, -1))
         return quaternions_orientation_error(q1, q2)
 
 
