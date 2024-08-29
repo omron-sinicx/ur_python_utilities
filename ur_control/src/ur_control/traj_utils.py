@@ -25,6 +25,7 @@
 import rospy
 import numpy as np
 from ur_control import transformations
+from pyquaternion import Quaternion
 
 
 def spiral(radius, theta_offset, revolutions, steps):
@@ -169,7 +170,9 @@ def compute_trajectory(initial_pose, plane, radius, radius_direction, steps=100,
     target_pose = transformations.transform_pose(initial_pose, direction, rotated_frame=False)
 
     # print("Initial", np.round(spalg.translation_rotation_error(target_pose, arm.end_effector()), 4))
-    target_orientation = transformations.vector_to_pyquaternion(transformations.quaternion_from_euler(*to_plane))
+    aux_orientation = transformations.quaternion_from_euler(*to_plane)
+
+    target_orientation = Quaternion(np.roll(aux_orientation, 1))
 
     initial_pose = initial_pose[:3]
     final_pose = target_pose[:3]
