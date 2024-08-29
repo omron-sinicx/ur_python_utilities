@@ -1162,7 +1162,8 @@ def pose_from_matrix(matrix):
         matrix = numpy.concatenate((matrix, [[0, 0, 0, 1]]), axis=0)
 
     pose = translation_from_matrix(matrix)
-    quat = rotation_matrix_from_quaternion(matrix)
+    quat = quaternion_from_matrix(matrix)
+
     return numpy.concatenate((pose, quat), axis=0)
 
 
