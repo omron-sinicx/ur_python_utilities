@@ -143,7 +143,7 @@ True
 >>> qz = quaternion_about_axis(gamma, zaxis)
 >>> q = quaternion_multiply(qx, qy)
 >>> q = quaternion_multiply(q, qz)
->>> Rq = quaternion_from_matrix(q)
+>>> Rq = quaternion_matrix(q)
 >>> is_same_transform(R, Rq)
 True
 >>> S = scale_matrix(1.23, origin)
@@ -167,12 +167,11 @@ True
 """
 
 
+import warnings
 import math
 
 import numpy
-
-from ur_control.math_utils import *
-
+from pyquaternion import Quaternion
 # Documentation in HTML format can be generated with Epydoc
 __docformat__ = "restructuredtext en"
 
@@ -949,7 +948,7 @@ def superimposition_matrix(v0, v1, scaling=False, usesvd=True):
         q /= vector_norm(q)  # unit quaternion
         q = numpy.roll(q, -1)  # move w component to end
         # homogeneous transformation matrix
-        M = rotation_matrix_from_quaternion(q)
+        M = quaternion_matrix(q)
 
     # scale: ratio of rms deviations from centroid
     if scaling:
@@ -1094,7 +1093,15 @@ def euler_from_quaternion(quaternion, axes='sxyz'):
     True
 
     """
-    return euler_from_matrix(rotation_matrix_from_quaternion(quaternion), axes)
+    return euler_from_matrix(quaternion_matrix(quaternion), axes)
+
+
+def quaternion_normalize(v, tolerance=0.00001):
+    mag2 = sum(n * n for n in v)
+    if mag2 > tolerance:
+        mag = math.sqrt(mag2)
+        v = tuple(n / mag for n in v)
+    return numpy.array(v)
 
 
 def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
@@ -1154,15 +1161,222 @@ def quaternion_from_euler(ai, aj, ak, axes='sxyz'):
     return quaternion
 
 
-def pose_from_matrix(matrix):
+def quaternion_about_axis(angle, axis):
+    """Return quaternion for rotation about axis.
+
+    >>> q = quaternion_about_axis(0.123, (1, 0, 0))
+    >>> numpy.allclose(q, [0.06146124, 0, 0, 0.99810947])
+    True
+
+    """
+    quaternion = numpy.zeros((4, ), dtype=numpy.float64)
+    quaternion[:3] = axis[:3]
+    qlen = vector_norm(quaternion)
+    if qlen > _EPS:
+        quaternion *= math.sin(angle/2.0) / qlen
+    quaternion[3] = math.cos(angle/2.0)
+    return quaternion
+
+
+def quaternion_matrix(quaternion):
+    """Return homogeneous rotation matrix from quaternion.
+
+    >>> R = quaternion_matrix([0.06146124, 0, 0, 0.99810947])
+    >>> numpy.allclose(R, rotation_matrix(0.123, (1, 0, 0)))
+    True
+
+    """
+    q = numpy.array(quaternion[:4], dtype=numpy.float64, copy=True)
+    nq = numpy.dot(q, q)
+    if nq < _EPS:
+        return numpy.identity(4)
+    q *= math.sqrt(2.0 / nq)
+    q = numpy.outer(q, q)
+    return numpy.array((
+        (1.0-q[1, 1]-q[2, 2],     q[0, 1]-q[2, 3],     q[0, 2]+q[1, 3], 0.0),
+        (q[0, 1]+q[2, 3], 1.0-q[0, 0]-q[2, 2],     q[1, 2]-q[0, 3], 0.0),
+        (q[0, 2]-q[1, 3],     q[1, 2]+q[0, 3], 1.0-q[0, 0]-q[1, 1], 0.0),
+        (0.0,                 0.0,                 0.0, 1.0)
+    ), dtype=numpy.float64)
+
+
+def quaternion_from_matrix(matrix):
+    """Return quaternion from rotation matrix.
+
+    >>> R = rotation_matrix(0.123, (1, 2, 3))
+    >>> q = quaternion_from_matrix(R)
+    >>> numpy.allclose(q, [0.0164262, 0.0328524, 0.0492786, 0.9981095])
+    True
+
+    """
+    q = numpy.empty((4, ), dtype=numpy.float64)
+    M = numpy.array(matrix, dtype=numpy.float64, copy=False)[:4, :4]
+    t = numpy.trace(M)
+    if t > M[3, 3]:
+        q[3] = t
+        q[2] = M[1, 0] - M[0, 1]
+        q[1] = M[0, 2] - M[2, 0]
+        q[0] = M[2, 1] - M[1, 2]
+    else:
+        i, j, k = 0, 1, 2
+        if M[1, 1] > M[0, 0]:
+            i, j, k = 1, 2, 0
+        if M[2, 2] > M[i, i]:
+            i, j, k = 2, 0, 1
+        t = M[i, i] - (M[j, j] + M[k, k]) + M[3, 3]
+        q[i] = t
+        q[j] = M[i, j] + M[j, i]
+        q[k] = M[k, i] + M[i, k]
+        q[3] = M[k, j] - M[j, k]
+    q *= 0.5 / math.sqrt(t * M[3, 3])
+    return q
+
+
+def pose_quaternion_from_matrix(matrix):
     """Return translation + quaternion(x,y,z,w)
     """
     if matrix.shape == (3, 4):
         matrix = numpy.concatenate((matrix, [[0, 0, 0, 1]]), axis=0)
 
     pose = translation_from_matrix(matrix)
-    quat = rotation_matrix_from_quaternion(matrix)
+    quat = quaternion_from_matrix(matrix)
     return numpy.concatenate((pose, quat), axis=0)
+
+
+def quaternion_multiply(quaternion1, quaternion0):
+    """Return multiplication of two quaternions.
+
+    >>> q = quaternion_multiply([1, -2, 3, 4], [-5, 6, 7, 8])
+    >>> numpy.allclose(q, [-44, -14, 48, 28])
+    True
+
+    """
+    x0, y0, z0, w0 = quaternion0
+    x1, y1, z1, w1 = quaternion1
+    return numpy.array((
+        x1*w0 + y1*z0 - z1*y0 + w1*x0,
+        -x1*z0 + y1*w0 + z1*x0 + w1*y0,
+        x1*y0 - y1*x0 + z1*w0 + w1*z0,
+        -x1*x0 - y1*y0 - z1*z0 + w1*w0), dtype=numpy.float64)
+
+
+def quaternion_conjugate(quaternion):
+    """Return conjugate of quaternion.
+
+    >>> q0 = random_quaternion()
+    >>> q1 = quaternion_conjugate(q0)
+    >>> q1[3] == q0[3] and all(q1[:3] == -q0[:3])
+    True
+
+    """
+    return numpy.array((-quaternion[0], -quaternion[1],
+                        -quaternion[2], quaternion[3]), dtype=numpy.float64)
+
+
+def quaternion_inverse(quaternion):
+    """Return inverse of quaternion.
+
+    >>> q0 = random_quaternion()
+    >>> q1 = quaternion_inverse(q0)
+    >>> numpy.allclose(quaternion_multiply(q0, q1), [0, 0, 0, 1])
+    True
+
+    """
+    return quaternion_conjugate(quaternion) / numpy.dot(quaternion, quaternion)
+
+
+def quaternion_slerp(quat0, quat1, fraction, spin=0, shortestpath=True):
+    """Return spherical linear interpolation between two quaternions.
+
+    >>> q0 = random_quaternion()
+    >>> q1 = random_quaternion()
+    >>> q = quaternion_slerp(q0, q1, 0.0)
+    >>> numpy.allclose(q, q0)
+    True
+    >>> q = quaternion_slerp(q0, q1, 1.0, 1)
+    >>> numpy.allclose(q, q1)
+    True
+    >>> q = quaternion_slerp(q0, q1, 0.5)
+    >>> angle = math.acos(numpy.dot(q0, q))
+    >>> numpy.allclose(2.0, math.acos(numpy.dot(q0, q1)) / angle) or \
+        numpy.allclose(2.0, math.acos(-numpy.dot(q0, q1)) / angle)
+    True
+
+    """
+    q0 = unit_vector(quat0[:4])
+    q1 = unit_vector(quat1[:4])
+    if fraction == 0.0:
+        return q0
+    elif fraction == 1.0:
+        return q1
+    d = numpy.dot(q0, q1)
+    if abs(abs(d) - 1.0) < _EPS:
+        return q0
+    if shortestpath and d < 0.0:
+        # invert rotation
+        d = -d
+        q1 *= -1.0
+    angle = math.acos(d) + spin * math.pi
+    if abs(angle) < _EPS:
+        return q0
+    isin = 1.0 / math.sin(angle)
+    q0 *= math.sin((1.0 - fraction) * angle) * isin
+    q1 *= math.sin(fraction * angle) * isin
+    q0 += q1
+    return q0
+
+
+def quaternion_rotate_vector(quaternion, vector):
+    """
+        Return vector rotated by a given unit quaternion
+    """
+    q_vector = numpy.append(vector, 0)
+    return quaternion_multiply(quaternion_multiply(quaternion, q_vector), quaternion_conjugate(quaternion))[:3]
+
+
+def random_quaternion(rand=None):
+    """Return uniform random unit quaternion.
+
+    rand: array like or None
+        Three independent random variables that are uniformly distributed
+        between 0 and 1.
+
+    >>> q = random_quaternion()
+    >>> numpy.allclose(1.0, vector_norm(q))
+    True
+    >>> q = random_quaternion(numpy.random.random(3))
+    >>> q.shape
+    (4,)
+
+    """
+    if rand is None:
+        rand = numpy.random.rand(3)
+    else:
+        assert len(rand) == 3
+    r1 = numpy.sqrt(1.0 - rand[0])
+    r2 = numpy.sqrt(rand[0])
+    pi2 = math.pi * 2.0
+    t1 = pi2 * rand[1]
+    t2 = pi2 * rand[2]
+    return numpy.array((numpy.sin(t1)*r1,
+                        numpy.cos(t1)*r1,
+                        numpy.sin(t2)*r2,
+                        numpy.cos(t2)*r2), dtype=numpy.float64)
+
+
+def random_rotation_matrix(rand=None):
+    """Return uniform random rotation matrix.
+
+    rnd: array like
+        Three independent random variables that are uniformly distributed
+        between 0 and 1 for each returned quaternion.
+
+    >>> R = random_rotation_matrix()
+    >>> numpy.allclose(numpy.dot(R.T, R), numpy.identity(4))
+    True
+
+    """
+    return quaternion_matrix(random_quaternion(rand))
 
 
 class Arcball(object):
@@ -1207,7 +1421,7 @@ class Arcball(object):
         else:
             initial = numpy.array(initial, dtype=numpy.float64)
             if initial.shape == (4, 4):
-                self._qdown = rotation_matrix_from_quaternion(initial)
+                self._qdown = quaternion_from_matrix(initial)
             elif initial.shape == (4, ):
                 initial /= vector_norm(initial)
                 self._qdown = initial
@@ -1278,7 +1492,7 @@ class Arcball(object):
 
     def matrix(self):
         """Return homogeneous rotation matrix."""
-        return rotation_matrix_from_quaternion(self._qnow)
+        return quaternion_matrix(self._qnow)
 
 
 def arcball_map_to_sphere(point, center, radius):
@@ -1491,6 +1705,33 @@ def is_same_transform(matrix0, matrix1):
     return numpy.allclose(matrix0, matrix1)
 
 
+def _import_module(module_name, warn=True, prefix='_py_', ignore='_'):
+    """Try import all public attributes from module into global namespace.
+
+    Existing attributes with name clashes are renamed with prefix.
+    Attributes starting with underscore are ignored by default.
+
+    Return True on successful import.
+
+    """
+    try:
+        module = __import__(module_name)
+    except ImportError:
+        if warn:
+            warnings.warn("Failed to import module " + module_name)
+    else:
+        for attr in dir(module):
+            if ignore and attr.startswith(ignore):
+                continue
+            if prefix:
+                if attr in globals():
+                    globals()[prefix + attr] = globals()[attr]
+                elif warn:
+                    warnings.warn("No Python implementation of " + attr)
+            globals()[attr] = getattr(module, attr)
+        return True
+
+
 def rotate_quaternion_by_rpy(roll, pitch, yaw, q_in, rotated_frame=False):
     """
     if rotated_frame == True, Apply RPY rotation in the reference frame of the quaternion.
@@ -1584,7 +1825,7 @@ def pose_from_angular_velocity(pose, velocity, dt=1.0, rotated_frame=False):
     """
     _pose = numpy.copy(pose)
     translation = _pose[:3]
-    orientation = to_np_quaternion(_pose[3:])
+    orientation = Quaternion(numpy.roll(_pose[3:], 1))
     vel = numpy.copy(velocity)
     lin_vel = vel[:3]
     ang_vel = vel[3:]
@@ -1593,7 +1834,7 @@ def pose_from_angular_velocity(pose, velocity, dt=1.0, rotated_frame=False):
     # Translation
     if rotated_frame:
         lin_vel[2] *= -1
-        lin_vel = quaternion.rotate_vectors(orientation, lin_vel)
+        lin_vel = orientation.rotate(lin_vel)
         pose_cmd[:3] = translation + lin_vel*dt
     else:
         pose_cmd[:3] = translation + lin_vel*dt
@@ -1601,7 +1842,7 @@ def pose_from_angular_velocity(pose, velocity, dt=1.0, rotated_frame=False):
     # Rotation
     new_orientation = integrateUnitQuaternionEuler(orientation, ang_vel, dt)
 
-    pose_cmd[3:] = to_np_array(new_orientation)
+    pose_cmd[3:] = numpy.roll(new_orientation.normalised.elements, -1)
 
     return pose_cmd
 
@@ -1615,11 +1856,37 @@ def integrateUnitQuaternionDMM(q, w, dt):
     return quaternion_multiply(q_tmp, q)
 
 
+def integrateUnitQuaternionDMM2(q, w, dt):
+    """ Integrate a unit quaterniong using the Direct Multiplicaiton Method"""
+    q_ = vector_to_pyquaternion(q)
+    w_norm = numpy.linalg.norm(w)
+    if w_norm == 0:
+        return q_
+    q_tmp = Quaternion(scalar=(numpy.cos(w_norm*dt/2.)), vector=numpy.sin(w_norm*dt/2)*w/w_norm)
+    return vector_from_pyquaternion(q_tmp * q_)
+
+
 def integrateUnitQuaternionEuler(q, w, dt):
     """ Integrate a unit quaterniong using Euler Method"""
-    q = to_np_quaternion(q)
-    qw = quaternion.from_vector_part(w)
+    q = Quaternion(q)
+    qw = Quaternion(scalar=0, vector=w)
     return (q + 0.5*qw*dt*q).normalised
+
+
+def pose_to_transform2(pose):
+    """
+    pose: translation + quaternion[x, y, z, w]
+
+    Note: the rest of this package use convention [x, y, z, w] but pyquaternion uses [w, x, y, z]
+    so we roll the quaternion before transform
+
+    """
+    translation = numpy.array([pose[:3]]).reshape(3, 1)
+    rotation = numpy.array(Quaternion(numpy.roll(pose[3:], 1)).rotation_matrix).reshape(3, 3)
+
+    transform = numpy.concatenate((rotation, translation), axis=1)
+    transform = numpy.concatenate((transform, [[0, 0, 0, 1]]))
+    return transform
 
 
 def pose_to_transform(pose):
@@ -1627,13 +1894,35 @@ def pose_to_transform(pose):
     if len(pose[3:]) == 3:
         transform = euler_matrix(*pose[3:])
     else:
-        transform = rotation_matrix_from_quaternion(pose[3:])
+        transform = quaternion_matrix(pose[3:])
     transform[:3, 3] = translation
     return transform
 
 
 def angular_velocity_from_quaternions(q0, q1, dt):
     return (2.0 / dt) * quaternion_multiply(q1 - q0, quaternion_inverse(q0))[:3]
+
+
+# def angular_velocity_from_quaternions(from_Q, to_Q, dt):
+#     """
+#     Calculates the angular velocity between two quaternions for a delta time dt
+#     """
+#     if isinstance(from_Q, Quaternion) and isinstance(to_Q, Quaternion):
+#         return (2.0 * (to_Q-from_Q)*from_Q.inverse / dt).vector
+#     else:
+#         assert isinstance(from_Q, (list, numpy.ndarray))
+#         assert isinstance(to_Q, (list, numpy.ndarray))
+#         _from_Q = Quaternion(numpy.roll(from_Q, 1))
+#         _to_Q = Quaternion(numpy.roll(to_Q, 1))
+#         return angular_velocity_from_quaternions(_from_Q, _to_Q, dt)
+
+
+def vector_to_pyquaternion(vector):
+    return Quaternion(numpy.roll(vector, 1))
+
+
+def vector_from_pyquaternion(quat):
+    return numpy.roll(quat.elements, -1)
 
 
 def pose_quaternion_to_euler(pose):
@@ -1644,9 +1933,78 @@ def pose_euler_to_quat(pose):
     return numpy.concatenate([pose[:3], list(quaternion_from_euler(*pose[3:], axes='rxyz'))])
 
 
+def diff_quaternion(q1, q2):
+    return quaternion_multiply(q2, quaternion_inverse(q1))
+
+
 def transform_between_poses(p1, p2):
     p1_T = pose_to_transform(p1)
     p2_T = pose_to_transform(p2)
 
     p1_T_inv = inverse_matrix(p1_T)
     return concatenate_matrices(p1_T_inv, p2_T)
+
+
+def quaternion_from_axis_angle(axis_angle):
+    angle = numpy.linalg.norm(axis_angle)
+
+    if math.isclose(angle, 0.0):
+        return numpy.array([0, 0, 0, 1.0])
+
+    axis = axis_angle / angle
+
+    quat = numpy.zeros(4)
+    quat[3] = numpy.cos(angle / 2.0)
+    quat[:3] = axis * numpy.sin(angle / 2.0)
+    return quat
+
+
+def axis_angle_from_quaternion(quat):
+    """
+    Converts quaternion to axis-angle format.
+    Returns a unit vector direction scaled by its angle in radians.
+
+    Args:
+        quat (np.array): (x,y,z,w) vec4 float angles
+
+    Returns:
+        np.array: (ax,ay,az) axis-angle exponential coordinates
+    """
+    # clip quaternion
+    if quat[3] > 1.0:
+        quat[3] = 1.0
+    elif quat[3] < -1.0:
+        quat[3] = -1.0
+
+    den = numpy.sqrt(1.0 - quat[3] * quat[3])
+    if math.isclose(den, 0.0):
+        # This is (close to) a zero degree rotation, immediately return
+        return numpy.zeros(3)
+
+    return (quat[:3] * 2.0 * math.acos(quat[3])) / den
+
+
+def quaternion_from_ortho6(ortho6):
+    R = rotation_matrix_from_ortho6(ortho6)
+    return quaternion_from_matrix(R)
+
+
+def ortho6_from_axis_angle(axis_angle):
+    return ortho6_from_quaternion(quaternion_from_axis_angle(axis_angle))
+
+
+def ortho6_from_quaternion(q):
+    R = quaternion_matrix(q)
+    return R[:3, :2].T.flatten()
+
+
+def rotation_matrix_from_ortho6(ortho6):
+    x_raw, y_raw = ortho6[0:3], ortho6[3:6]
+    x = x_raw / numpy.linalg.norm(x_raw)
+    z = numpy.cross(x, y_raw)
+    z = z / numpy.linalg.norm(z)
+    y = numpy.cross(z, x)
+
+    R = numpy.eye(4)
+    R[:3, :3] = numpy.column_stack((x, y, z))
+    return R

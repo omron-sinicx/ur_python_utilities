@@ -4,13 +4,10 @@ import numpy as np
 
 from ur_control import transformations as tr
 
-from ur_control import spalg
 # Messages
 from geometry_msgs.msg import (Point, Quaternion, Pose, PoseStamped, Vector3, Transform,
                                Wrench)
-from sensor_msgs.msg import CameraInfo, Image, RegionOfInterest
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from math import pi, cos, sin
+from sensor_msgs.msg import RegionOfInterest
 
 import pyquaternion
 
@@ -26,7 +23,7 @@ def from_dict(transform_dict):
   @rtype: np.array
   @return: The resulting numpy array
   """
-    T = tr.quaternion_matrix(np.array(transform_dict['rotation']))
+    T = tr.rotation_matrix_from_quaternion(np.array(transform_dict['rotation']))
     T[:3, 3] = np.array(transform_dict['translation'])
     return T
 
@@ -77,7 +74,7 @@ def from_pose(msg):
   @rtype: np.array
   @return: The resulting numpy array
   """
-    T = tr.quaternion_matrix(from_quaternion(msg.orientation))
+    T = tr.rotation_matrix_from_quaternion(from_quaternion(msg.orientation))
     T[:3, 3] = from_point(msg.position)
     return T
 
@@ -118,7 +115,7 @@ def from_transform(msg):
   @rtype: np.array
   @return: The resulting numpy array
   """
-    T = tr.quaternion_matrix(from_quaternion(msg.rotation))
+    T = tr.rotation_matrix_from_quaternion(from_quaternion(msg.rotation))
     T[:3, 3] = from_vector3(msg.translation)
     return T
 
@@ -187,7 +184,7 @@ def to_pose(T):
         quat = to_quaternion(T[3:])
     else:
         pos = Point(*T[:3, 3])
-        quat = Quaternion(*tr.quaternion_from_matrix(T))
+        quat = Quaternion(*tr.rotation_matrix_from_quaternion(T))
     return Pose(pos, quat)
 
 
@@ -214,7 +211,7 @@ def to_transform(T):
         rotation = to_quaternion(T[3:])
     else:
         translation = Vector3(*T[:3, 3])
-        rotation = Quaternion(*tr.quaternion_from_matrix(T))
+        rotation = Quaternion(*tr.rotation_matrix_from_quaternion(T))
     return Transform(translation, rotation)
 
 
@@ -374,7 +371,7 @@ def transform_pose(target_frame, transform_matrix, ps):
 
     # xyz and quat are txpose's position and orientation
     xyz = tuple(tr.translation_from_matrix(txpose))[:3]
-    quat = tuple(tr.quaternion_from_matrix(txpose))
+    quat = tuple(tr.rotation_matrix_from_quaternion(txpose))
 
     # assemble return value PoseStamped
     r = PoseStamped()
@@ -389,4 +386,4 @@ def xyz_to_mat44(pos):
 
 
 def xyzw_to_mat44(ori):
-    return tr.quaternion_matrix((ori.x, ori.y, ori.z, ori.w))
+    return tr.rotation_matrix_from_quaternion((ori.x, ori.y, ori.z, ori.w))
