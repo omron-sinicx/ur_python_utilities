@@ -292,7 +292,10 @@ class Arm(object):
             x = self.end_effector(joint_angles, tip_link=tip_link)
             euler = np.array(transformations.euler_from_quaternion(x[3:], axes='sxyz'))
             return np.concatenate((x[:3], euler))
-
+        elif rot_type == 'ortho6':
+            x = self.end_effector(joint_angles, tip_link=tip_link)
+            ortho6 = np.array(transformations.ortho6_from_quaternion(x[3:]))
+            return np.concatenate((x[:3], ortho6))
         else:
             raise ValueError("Rotation Type not supported", rot_type)
 
@@ -584,6 +587,7 @@ class Arm(object):
         if not rospy.has_param("use_gazebo_sim"):
             # First try to zero FT from ur_driver
             self._zero_ft()
+            rospy.sleep(0.5)
         # Then update filtered one
         self._zero_ft_filtered()
 
