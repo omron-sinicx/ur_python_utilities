@@ -49,7 +49,9 @@ def map_keyboard():
         print("EE Pose:", np.round(arm.end_effector(), 5).tolist())
         print("EE Pose (euler):", np.round(arm.end_effector(rot_type="euler"), 5).tolist())
         if arm.gripper:
-            print("Gripper position:", np.round(arm.gripper.get_position(), 4))
+            print("Gripper angle:", np.round(arm.gripper.get_position(), 4))
+            print("Gripper position:", np.round(arm.gripper.opening_width, 4))
+            print("Gripper percentage:", np.round(arm.gripper.get_opening_percentage(), 4))
 
     def set_j(joint_name, sign):
         global delta_q
@@ -134,10 +136,10 @@ def map_keyboard():
         '7': (update_d, ['x', -0.0001], "delta_x decrease"),
 
         # Gripper
-        '5': (move_gripper, [0.002], "open gripper a bit"),
+        '5': (move_gripper, [0.005], "open gripper a bit"),
         't': (open_gripper, [], "open gripper"),
         'g': (close_gripper, [], "close gripper"),
-        'b': (move_gripper, [-0.002], "close gripper a bit"),
+        'b': (move_gripper, [-0.005], "close gripper a bit"),
     }
     done = False
     print("Controlling joints. Press ? for help, Esc to quit.")
@@ -183,10 +185,9 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--robotiq_gripper', action='store_true', help='enable Robotiq gripper commands')
+        '--gripper', type=str, help='Load gripper controller, indicate the gripper type (ROBOTIQ or GENERIC)', default="")
     parser.add_argument(
-        '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
-        )
+        '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0')
 
     args = parser.parse_args(rospy.myargv()[1:])
 
@@ -197,7 +198,16 @@ See help inside the example with the '?' key for key bindings.
 
     tcp_link = args.tcp
     joints_prefix = args.namespace + '_' if args.namespace else None
-    gripper = GripperType.ROBOTIQ if args.robotiq_gripper else GripperType.GENERIC
+
+    if args.gripper:
+        if str(args.gripper).lower() == "robotiq":
+            gripper = GripperType.ROBOTIQ
+        elif str(args.gripper).lower() == "generic":
+            gripper = GripperType.GENERIC
+        else:
+            raise ValueError(f"Invalid gripper type `{args.gripper}`. Supported types: ROBOTIQ or GENERIC")
+    else:
+        gripper = None
 
     global arm
     arm = Arm(namespace=args.namespace,

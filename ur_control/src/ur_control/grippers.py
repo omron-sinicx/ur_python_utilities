@@ -30,11 +30,11 @@ class GripperControllerBase():
         elif rospy.has_param(self.ns + node_name + "/joint_name"):
             self.valid_joint_names = rospy.get_param(self.ns + node_name + "/joint_name")
             if isinstance(self.valid_joint_names, str):
-                 self.valid_joint_names = [prefix + self.valid_joint_names]
+                self.valid_joint_names = [prefix + self.valid_joint_names]
         else:
             rospy.logerr("Couldn't find valid joints params in %s" % (self.ns + node_name))
             return
-        
+
         self._js_sub = rospy.Subscriber('/joint_states', JointState, self.joint_states_cb, queue_size=1)
 
         retry = False
@@ -256,8 +256,8 @@ class RobotiqGripper(GripperControllerBase):
 
         self.opening_width = 0.0
 
-        self.sub_gripper_status_ = rospy.Subscriber(self.ns + "gripper_status", robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
         self.gripper = actionlib.SimpleActionClient(self.ns + "gripper_action_controller", robotiq_msgs.msg.CModelCommandAction)
+        self.sub_gripper_status_ = rospy.Subscriber("/%s/gripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
 
         if rospy.has_param(self.ns + "gripper_action_controller/joint_name"):
             self.gripper_type = rospy.get_param(self.ns + "gripper_action_controller/joint_name")
@@ -287,7 +287,7 @@ class RobotiqGripper(GripperControllerBase):
         self.opening_width = msg.position  # [m]
 
     def get_opening_percentage(self):
-        return self.get_position() / self._max_gap
+        return self.opening_width / self._max_gap
 
     def close(self, force=40.0, velocity=1.0, wait=True):
         return self.command("close", force=force, velocity=velocity, wait=wait)
