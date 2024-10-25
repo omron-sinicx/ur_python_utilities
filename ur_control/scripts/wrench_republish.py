@@ -40,7 +40,7 @@ class FTsensor(object):
         tcp_link = "knife_center"
         self.arm = arm.Arm(ft_topic="wrench", namespace=robot_name,
                            joint_names_prefix=robot_name+'_', robot_urdf=robot_name,
-                           robot_urdf_package='osx_scene_description',
+                           robot_urdf_package='trufus_scene_description',
                            ee_link=tcp_link)
 
         self.in_topic = '/wrench'
