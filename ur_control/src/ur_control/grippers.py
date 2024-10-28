@@ -270,7 +270,7 @@ class RobotiqGripper(GripperControllerBase):
             self._max_angle = 0.8
 
         if self.gripper_type == "robotiq_hande_joint_finger":
-            self._max_gap = self._max_gap * 2.0
+            self._max_gap = self._max_gap
             self._to_open = 0.0
             self._to_close = self._max_gap
         elif self.gripper_type == "finger_joint":
@@ -318,14 +318,9 @@ class RobotiqGripper(GripperControllerBase):
         0.0 = Fully Close
         1.0 = Fully Open
         """
-        if self.gripper_type == "finger_joint":
-            value = np.clip(value, 0.0, 1.0)
-            cmd = (value) * self._max_gap
-            return self.command(cmd, wait=wait)
-        if self.gripper_type == "hand-e":
-            value = np.clip(value, 0.0, 1.0)
-            cmd = (1.0 - value) * self._max_gap / 2.0
-            return self.command(cmd, wait=wait)
+        value = np.clip(value, 0.0, 1.0)
+        cmd = (value) * self._max_gap
+        return self.command(cmd, wait=wait)
 
     def command(self, command, force=40.0, velocity=1.0, wait=True):
         """
