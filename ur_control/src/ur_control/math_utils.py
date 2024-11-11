@@ -2,6 +2,88 @@ import numpy as np
 import quaternion
 
 
+def skew(v):
+    """
+    Returns the 3x3 skew matrix.
+    The skew matrix is a square matrix M{A} whose transpose is also its
+    negative; that is, it satisfies the condition M{-A = A^T}.
+    @type v: array
+    @param v: The input array
+    @rtype: array, shape (3,3)
+    @return: The resulting skew matrix
+    """
+    skv = np.roll(np.roll(np.diag(np.asarray(v).flatten()), 1, 1), -1, 0)
+    return (skv - skv.T)
+
+
+def quaternions_orientation_error(quat_target, quat_source):
+    """
+    Calculates the orientation error between two quaternions
+    Qd is the desired orientation
+    Qc is the current orientation
+    both with respect to the same fixed frame
+
+    return vector part
+    """
+    Qd = to_np_quaternion(quat_target)
+    Qc = to_np_quaternion(quat_source)
+    ne = Qc.w*Qd.w + np.dot(quaternion.as_vector_part(Qc), quaternion.as_vector_part(Qd))
+    ee = Qc.w*quaternion.as_vector_part(Qd) - Qd.w*quaternion.as_vector_part(Qc) + np.dot(skew(quaternion.as_vector_part(Qc)), quaternion.as_vector_part(Qd))
+    ee *= np.sign(ne)  # disambiguate the sign of the quaternion
+    return ee
+
+
+def compute_quaternion_error(qd, qc, normalize_angle=False):
+    """
+    Compute the error between current and desired quaternion orientations.
+    Returns the axis error components for PID control.
+
+    Args:
+        q_current (numpy.quaternion): Current orientation quaternion
+        q_desired (numpy.quaternion): Desired orientation quaternion
+
+    Returns:
+        tuple: (ax, ay, az) axis error components in radians
+    """
+    q_current = to_np_quaternion(qc)
+    q_desired = to_np_quaternion(qd)
+    # Ensure inputs are normalized quaternions
+    q_current = q_current / np.abs(q_current)
+    q_desired = q_desired / np.abs(q_desired)
+
+    # Compute error quaternion
+    q_error = q_current.conjugate() * q_desired
+
+    # Extract vector and scalar parts
+    qv = np.array([q_error.x, q_error.y, q_error.z])
+    qw = q_error.w
+
+    # Compute the rotation angle
+    angle = 2 * np.arctan2(np.linalg.norm(qv), qw)
+
+    # Handle the case when the quaternions are very close
+    if np.linalg.norm(qv) < 1e-10:
+        return 0.0, 0.0, 0.0
+
+    # Normalize the axis
+    axis = qv / np.linalg.norm(qv)
+
+    if normalize_angle:
+        # Normalize angle to [-1, 1] range
+        # This uses the fact that maximum possible rotation is π radians (180 degrees)
+        normalized_angle = angle / np.pi
+        ax = axis[0] * normalized_angle
+        ay = axis[1] * normalized_angle
+        az = axis[2] * normalized_angle
+    else:
+        # Return raw angle in radians if normalization is not desired
+        ax = axis[0] * angle
+        ay = axis[1] * angle
+        az = axis[2] * angle
+
+    return ax, ay, az
+
+
 def orientation_error_as_rotation_vector(quat_target, quat_source):
     """
     Compute the orientation error between two quaternions as a rotation vector.
@@ -18,20 +100,20 @@ def orientation_error_as_rotation_vector(quat_target, quat_source):
     return quaternion.as_rotation_vector(qt*qs.conjugate())
 
 
-def quaternions_orientation_error(quat_target, quat_source):
-    """
-    Compute the orientation error between two quaternions.
+# def quaternions_orientation_error(quat_target, quat_source):
+#     """
+#     Compute the orientation error between two quaternions.
 
-    Args:
-        quat_target (np.ndarray): The target quaternion.
-        quat_source (np.ndarray): The source quaternion.
+#     Args:
+#         quat_target (np.ndarray): The target quaternion.
+#         quat_source (np.ndarray): The source quaternion.
 
-    Returns:
-        np.ndarray: The quaternion representing the orientation error.
-    """
-    qt = to_np_quaternion(quat_target)
-    qs = to_np_quaternion(quat_source)
-    return to_np_array(qt*qs.conjugate())
+#     Returns:
+#         np.ndarray: The quaternion representing the orientation error.
+#     """
+#     qt = to_np_quaternion(quat_target)
+#     qs = to_np_quaternion(quat_source)
+#     return to_np_array(qt*qs.conjugate())
 
 # Quaternion Math
 
