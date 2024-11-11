@@ -487,6 +487,8 @@ def quaternions_orientation_error(Qd, Qc):
     return vector part
     """
     if isinstance(Qd, Quaternion) and isinstance(Qd, Quaternion):
+        # print("[1]", f"{Qd=}", f"{Qc=}")
+        # print("[1]", Qd.w, Qd.x, Qd.y, Qd.z, f"{Qd.scalar=}")
         ne = Qc.scalar*Qd.scalar + np.dot(np.array(Qc.vector).T, Qd.vector)
         ee = Qc.scalar*np.array(Qd.vector) - Qd.scalar*np.array(Qc.vector) + np.dot(skew(Qc.vector), Qd.vector)
         ee *= np.sign(ne)  # disambiguate the sign of the quaternion
@@ -494,8 +496,8 @@ def quaternions_orientation_error(Qd, Qc):
     else:
         assert isinstance(Qd, (list, np.ndarray)), "type: " + str(type(Qd))
         assert isinstance(Qc, (list, np.ndarray)), "type: " + str(type(Qd))
-        q1 = Quaternion(np.roll(Qd, -1))
-        q2 = Quaternion(np.roll(Qc, -1))
+        q1 = Quaternion(np.roll(Qd, 1))
+        q2 = Quaternion(np.roll(Qc, 1))
         return quaternions_orientation_error(q1, q2)
 
 
