@@ -25,7 +25,6 @@
 import rospy
 import numpy as np
 from ur_control import transformations
-from pyquaternion import Quaternion
 
 
 def spiral(radius, theta_offset, revolutions, steps):
@@ -152,6 +151,7 @@ def compute_trajectory(initial_pose, plane, radius, radius_direction, steps=100,
         wiggle_angle: float, magnitude of wiggle-rotation in radians
         wiggle_revolutions: int, number of wiggle-revolutions 
     """
+    from pyquaternion import Quaternion
 
     direction = get_plane_direction(radius_direction, radius)
 
