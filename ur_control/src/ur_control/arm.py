@@ -118,7 +118,12 @@ class Arm(object):
         self.controller_manager = ControllersConnection(self.ns)
         self.dashboard_services = URServices(self.ns)
 
+        rospy.on_shutdown(self.__on_shutdown__)
+
 ### private methods ###
+
+    def __on_shutdown__(self):
+        self.joint_traj_controller.stop()
 
     def __init_controllers__(self, gripper_type, joint_names_prefix=None):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
