@@ -252,12 +252,15 @@ class RobotiqGripper(GripperControllerBase):
     def __init__(self, namespace="", prefix="", timeout=2):
         node_name = "gripper_action_controller"
         super().__init__(namespace, node_name, prefix, timeout)
-        self.ns = namespace
+        if not namespace or namespace == "/":
+            self.ns = ""
+        else:
+            self.ns = namespace
 
         self.opening_width = 0.0
 
         self.gripper = actionlib.SimpleActionClient(self.ns + "gripper_action_controller", robotiq_msgs.msg.CModelCommandAction)
-        self.sub_gripper_status_ = rospy.Subscriber("/%s/gripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
+        self.sub_gripper_status_ = rospy.Subscriber("%s/gripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
 
         if rospy.has_param(self.ns + "gripper_action_controller/joint_name"):
             self.gripper_type = rospy.get_param(self.ns + "gripper_action_controller/joint_name")
