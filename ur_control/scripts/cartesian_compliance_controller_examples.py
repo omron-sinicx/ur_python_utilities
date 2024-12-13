@@ -103,7 +103,101 @@ def move_cartesian():
     print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
 
 
+def recompute_trajectory(R, h, num_waypoints):
+    # Compute reference trajectory and reference force profile
+
+    # mortar surface function and derivatives
+    def fx(x, y): return 4*x**3 * 11445.39 + y**2 * 2*x * 22890.7 + 2*x * 3.11558
+    def fy(x, y): return 4*y**3 * 11445.39 + 2*y * x**2 * 22890.7 + 2*y * 3.11558
+
+    def get_orientation_quaternion_smooth(n, prev_quat=None, prev_R=None):
+        if prev_R is None:
+            # If no previous rotation
+            R = np.zeros((3, 3))
+            R[:, 2] = n
+            R[:, 0] = np.cross([0, 1, 0], n)
+            R[:, 0] /= np.linalg.norm(R[:, 0])
+            R[:, 1] = np.cross(n, R[:, 0])
+        else:
+            # If we have a previous rotation, try to minimize the change
+            R = prev_R.copy()
+            R[:, 2] = n  # Set the new normal
+            R[:, 1] = np.cross(n, R[:, 0])  # Adjust the y-axis
+            R[:, 1] /= np.linalg.norm(R[:, 1])
+            R[:, 0] = np.cross(R[:, 1], n)  # Adjust the x-axis
+
+        # quat = T.mat2quat(R)
+        # quat = [0, 0, 0, 1]
+        from scipy.spatial.transform import Rotation
+        quat = Rotation.from_matrix(R).as_quat()
+        print(quat)
+
+        # Ensure consistent quaternion sign
+        if prev_quat is not None and np.dot(quat, prev_quat) < 0:
+            quat = -quat
+
+        return quat, R
+
+    h = np.clip(h, 0.01, 0.04)  # make sure it's still inside the mortar as height
+    # table_height = 0.8
+    table_height = 0.0
+    initial_pose = [0.0, R, table_height+h, 0.0, 0.9990052, 0.04459406, 0.0]
+
+    # ref_traj = traj_utils.compute_trajectory(
+    #     initial_pose,
+    #     plane='XY',
+    #     radius=R,
+    #     radius_direction='-Y',
+    #     steps=num_waypoints,
+    #     revolutions=1,
+    #     from_center=False,
+    #     trajectory_type='circular',
+    # )
+    steps = num_waypoints
+    revolutions = 1
+    theta_offset = 0
+    radius = R
+    theta = np.linspace(0, 2*np.pi*revolutions, steps) + theta_offset
+    x = radius*np.cos(theta)
+    y = radius*np.sin(theta)
+    z = np.ones(steps) * (table_height + h)
+    ref_traj_pos = np.array([x, y, z]).T
+    # print(ref_traj_pos)
+
+    ind = 0
+
+    # recalculate orientation in every point to be perpendicular to surface;
+    ref_traj = np.zeros((steps, 7))
+    for point in ref_traj_pos:
+        # point to evaluate in
+        px, py = point[0], point[1]
+
+        # calculate the normal and tangents vectors to the surface of the mortar
+        n = np.array([fx(px, py), fy(px, py), -1])
+        normal_vect_direction = n/np.linalg.norm(n)
+
+        try:
+            quat_ref, R = get_orientation_quaternion_smooth(normal_vect_direction, quat_ref, R)
+        except:
+            # first point won't have a rotation matrix to refer to
+            quat_ref, R = get_orientation_quaternion_smooth(normal_vect_direction)
+
+        ref_traj[ind, :3] = ref_traj_pos[ind]
+        ref_traj[ind, 3:] = quat_ref
+        ind += 1
+
+    load_N = np.random.randint(low=1, high=20)  # take a random force reference
+    ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
+
+    return ref_traj, ref_force
+
+
 def powder_grounding():
+    ref_traj, ref_force = recompute_trajectory(R=0.0085, h=0.004, num_waypoints=100)
+    ref_traj += np.array([0, 0.5, 0, 0, 0, 0, 0])
+    print(ref_traj)
+    # print(ref_force)
+
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
 
@@ -115,8 +209,8 @@ def powder_grounding():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    # selection_matrix = np.ones(6)
-    selection_matrix = [1, 1, 1, 1, 1, 0]
+    selection_matrix = np.ones(6)
+    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -132,8 +226,9 @@ def powder_grounding():
     p2[2] += 0.005
 
     trajectory = p1
-    # trajectory = np.stack((p1, p2))
+    trajectory = np.stack((p1, p2))
     target_force = np.zeros(6)
+    # target_force = np.ones(6)
 
     def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
         x, y, z = pos
@@ -167,33 +262,45 @@ def powder_grounding():
         rospy.loginfo_throttle(0.25, f"x: {x[:]}")
         rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
         R = R_base2surface(pos=x[:3])
-        print(R)
+        # print(R)
         x, y, z = x[0], x[1], x[2]
+        # print(x, y, z)
         px = np.array([
             [0, -z,  y],
             [z,  0, -x],
             [-y, x,  0],
 
         ])
-        T_6x6 = np.block([
-            [R, px @ R],
-            [np.zeros((3, 3)), R],
+        T_6x6 = np.block([  # transformation matrix from base to surface
+            # [R, px @ R],
+            # [np.zeros((3, 3)), R],
+            [R, np.zeros((3, 3))],
+            [px @ R, R],
         ])
-        T_6x6_inv = np.block([
-            [R.T, (px @ R).T],
-            [np.zeros((3, 3)), R.T],
+        T_6x6_inv = np.block([  # transformation matrix from surface to base
+            # [R.T, (px @ R).T],
+            # [np.zeros((3, 3)), R.T],
+            [R.T, np.zeros((3, 3))],
+            [(px @ R).T, R.T],
         ])
-        print(T_6x6 @ T_6x6_inv)
+        # print(T_6x6 @ T_6x6_inv)
         # print(np.sum(R[:, 0] * R[:, 2]))
         # print(np.sum(R[:, 1] * R[:, 2]))
         # print(np.sum(R[:, 0] * R[:, 1]))
-        selection_matrix_transformed = T_6x6_inv*selection_matrix*T_6x6
-        arm.update_selection_matrix(selection_matrix_transformed)
+        selection_matrix_transformed = T_6x6_inv@np.diag(selection_matrix)@T_6x6
+        # print("selection_matrix_transformed:")
+        # print(selection_matrix_transformed)
+        # selection_matrix_transformed_inv = T_6x6_inv@(np.eye(6) - np.diag(selection_matrix))@T_6x6
+        # print("selection_matrix_transformed_inv:")
+        # print(selection_matrix_transformed_inv)
+        # arm.update_selection_matrix(selection_matrix_transformed)
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
-        trajectory,
-        target_wrench=target_force,
+        # trajectory,
+        # target_wrench=target_force,
+        ref_traj,
+        target_wrench=ref_force[0],
         max_force_torque=[50., 50., 50., 5., 5., 5.],
         duration=30,
         func=f,
@@ -202,7 +309,7 @@ def powder_grounding():
         auto_stop=False,
     )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
-    print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    print("Pose error", np.round(trajectory[:, :3] - arm.end_effector()[:3], 4))
 
 
 def move_force():
