@@ -375,7 +375,7 @@ class CompliantController(Arm):
                     self.sliding_error(trajectory[trajectory_index], max_scale_error)
 
             if func:
-                func(self.end_effector())
+                func(self.end_effector(), current_wrench)
 
             self.rate.sleep()
 

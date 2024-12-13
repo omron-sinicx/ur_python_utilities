@@ -258,8 +258,14 @@ def powder_grounding():
         #     [ -x*z/r**2,  -y*z/r**2 -x*y/r**2*x*z/r**2,  z/r],
         # ])
 
-    def f(x):
+    x_list = []
+    w_list = []
+
+    def f(x, w):
+        x_list.append(x)
+        w_list.append(w)
         rospy.loginfo_throttle(0.25, f"x: {x[:]}")
+        rospy.loginfo_throttle(0.25, f"w: {w[:]}")
         rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
         R = R_base2surface(pos=x[:3])
         # print(R)
@@ -310,6 +316,17 @@ def powder_grounding():
     )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
     print("Pose error", np.round(trajectory[:, :3] - arm.end_effector()[:3], 4))
+
+    import matplotlib.pyplot as plt
+    x_list_np = np.array(x_list)
+    w_list_np = np.array(w_list)
+    plt.figure()
+    plt.axis("equal")
+    plt.plot(x_list_np[:, 0], x_list_np[:, 1])
+    plt.figure()
+    plt.plot(w_list_np[:, :])
+    plt.legend(["x", "y", "z", "rx", "ry", "rz"])
+    plt.show()
 
 
 def move_force():
