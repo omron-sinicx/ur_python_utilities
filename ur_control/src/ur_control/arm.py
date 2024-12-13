@@ -60,7 +60,7 @@ class Arm(object):
                  base_link: str = None,
                  ee_link: str = None,
                  joint_names_prefix: str = None):
-        """ 
+        """
 
         Parameters
         ----------
@@ -86,7 +86,7 @@ class Arm(object):
             If a non-supported gripper type or ik solver is defined
 
         """
-
+        print(namespace)
         self.ns = utils.solve_namespace(namespace)
 
         base_link = utils.resolve_parameter(value=base_link, default_value=BASE_LINK)
@@ -215,7 +215,7 @@ class Arm(object):
 
         Parameters
         ----------
-        pose : 
+        pose :
             Cartesian pose of the end-effector defined as ee_link
         seed : optional
             if given, attempt to return a joint configuration closer to the seed
@@ -258,7 +258,7 @@ class Arm(object):
                      joint_angles=None,
                      rot_type='quaternion',
                      tip_link=None) -> np.ndarray:
-        """ 
+        """
         Return the Cartesian pose of the end-effector in the robot base frame (base_link).
 
         Parameters
@@ -276,7 +276,7 @@ class Arm(object):
         Returns
         -------
         res : ndarray
-            The Cartesian pose in the form of 
+            The Cartesian pose in the form of
             quaternion: [x, y, z, aw, ax, ay, az] or
             euler: [x, y, z, roll, pitch, yaw]
             in radians.
@@ -313,7 +313,7 @@ class Arm(object):
 
     def joint_angles(self) -> np.ndarray:
         """
-        Returns the current joint positions in radians and 
+        Returns the current joint positions in radians and
         in the order given by constants.JOINT_ORDER.
         """
         return self.joint_traj_controller.get_joint_positions()
@@ -362,7 +362,7 @@ class Arm(object):
     def get_wrench(self,
                    base_frame_control=False,
                    hand_frame_control=False) -> np.ndarray:
-        """ 
+        """
         Returns the wrench (force/torque) in task-space.
         By default, return the wrench as read from the sensor topic.
 
@@ -414,7 +414,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         positions : numpy.ndarray
             target joint configuration in the order given by constants.JOINT_ORDER
@@ -428,7 +428,7 @@ class Arm(object):
         Returns
         -------
         res : bool
-            True if the trajectory is succesful when waiting for the execution to be 
+            True if the trajectory is succesful when waiting for the execution to be
             completed. Otherwise returns true if the trajectory was started.
         """
         self.joint_traj_controller.add_point(positions=positions,
@@ -459,7 +459,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         positions : 2-D numpy.ndarray
             list of target joint configuration for each waypoint in the order given by constants.JOINT_ORDER
@@ -498,7 +498,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -527,7 +527,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -557,13 +557,13 @@ class Arm(object):
                       transformation: np.array,
                       relative_to_tcp: bool = True,
                       wait: bool = True) -> ExecutionResult:
-        """ 
+        """
         Move end-effector (ee_link) relative to its current position
 
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -586,7 +586,7 @@ class Arm(object):
 ### FT sensor control ###
 
     def zero_ft_sensor(self):
-        """ 
+        """
         Reset force-torque sensor readings to zeros.
         """
         if not rospy.has_param("use_gazebo_sim"):
@@ -597,7 +597,7 @@ class Arm(object):
         self._zero_ft_filtered()
 
     def set_ft_filtering(self, active=True):
-        """ 
+        """
         Enable/disable a low-pass filter.
         If active, the readings returned from self.get_wrench will have been filtered.
         otherwise, the raw data from the sensor's topic will be returned.

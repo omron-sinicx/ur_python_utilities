@@ -84,10 +84,123 @@ def move_cartesian():
     # trajectory = np.stack((p1, p2))
     target_force = np.zeros(6)
 
-    def f(x): return rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+    def f(x):
+        rospy.loginfo_throttle(0.25, f"x: {x[:3]}")
+        rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+
     arm.zero_ft_sensor()
-    res = arm.execute_compliance_control(trajectory, target_wrench=target_force, max_force_torque=[50., 50., 50., 5., 5., 5.],
-                                         duration=5, func=f, scale_up_error=True, max_scale_error=3.0, auto_stop=False)
+    res = arm.execute_compliance_control(
+        trajectory,
+        target_wrench=target_force,
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        duration=30,
+        func=f,
+        scale_up_error=True,
+        max_scale_error=3.0,
+        auto_stop=False,
+    )
+    print("EE total displacement", np.round(ee - arm.end_effector(), 4))
+    print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+
+
+def powder_grounding():
+    q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    arm.set_joint_positions(positions=q, target_time=3, wait=True)
+
+    # arm.set_position_control_mode(False)
+    # arm.set_control_mode(mode="spring-mass-damper")
+    arm.set_position_control_mode(True)
+    arm.set_control_mode(mode="parallel")
+    arm.set_solver_parameters(error_scale=0.5, iterations=1)
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
+
+    # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
+    # selection_matrix = np.ones(6)
+    selection_matrix = [1, 1, 1, 1, 1, 0]
+    arm.update_selection_matrix(selection_matrix)
+
+    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    arm.update_pd_gains(p_gains, d_gains=d_gains)
+
+    ee = arm.end_effector()
+
+    p1 = ee.copy()
+    p1[2] -= 0.03
+
+    p2 = p1.copy()
+    p2[2] += 0.005
+
+    trajectory = p1
+    # trajectory = np.stack((p1, p2))
+    target_force = np.zeros(6)
+
+    def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
+        x, y, z = pos
+        a, b, c = center
+        x, y, z = x - a, y - b, z - c
+        r = np.sqrt(x**2 + y**2 + z**2)
+        # print(x, y, z)
+        # print(1-(x/r)**2)
+        # print((x*y)/r^4*(1-r^2)*(r^2-x^2))
+        # print(x/r)
+        u_z = 1/r * np.array([x, y, z])
+        # print(u_z)
+        x_basis = np.array([1, 0, 0])
+        u_x = x_basis - np.sum(x_basis*u_z)*u_z
+        u_x /= np.linalg.norm(u_x)
+        y_basis = np.array([0, 1, 0])
+        u_y = y_basis - np.sum(y_basis*u_z)*u_z - np.sum(y_basis*u_x)*u_x
+        u_y /= np.linalg.norm(u_y)
+        # u_y = y_basis - np.sum(y_basis*u_z)*u_z
+        R = np.array([
+            u_x, u_y, u_z,
+        ]).T
+        return R
+        # return np.array([
+        #     [1-(x/r)**2,  -x*y/r**2 -x*y/r**2,      x/r],
+        #     [ -x*y/r**2, 1-(y/r)**2 -x*y/r**2*x*y/r**2, y/r],
+        #     [ -x*z/r**2,  -y*z/r**2 -x*y/r**2*x*z/r**2,  z/r],
+        # ])
+
+    def f(x):
+        rospy.loginfo_throttle(0.25, f"x: {x[:]}")
+        rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
+        R = R_base2surface(pos=x[:3])
+        print(R)
+        x, y, z = x[0], x[1], x[2]
+        px = np.array([
+            [0, -z,  y],
+            [z,  0, -x],
+            [-y, x,  0],
+
+        ])
+        T_6x6 = np.block([
+            [R, px @ R],
+            [np.zeros((3, 3)), R],
+        ])
+        T_6x6_inv = np.block([
+            [R.T, (px @ R).T],
+            [np.zeros((3, 3)), R.T],
+        ])
+        print(T_6x6 @ T_6x6_inv)
+        # print(np.sum(R[:, 0] * R[:, 2]))
+        # print(np.sum(R[:, 1] * R[:, 2]))
+        # print(np.sum(R[:, 0] * R[:, 1]))
+        selection_matrix_transformed = T_6x6_inv*selection_matrix*T_6x6
+        arm.update_selection_matrix(selection_matrix_transformed)
+
+    arm.zero_ft_sensor()
+    res = arm.execute_compliance_control(
+        trajectory,
+        target_wrench=target_force,
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        duration=30,
+        func=f,
+        scale_up_error=True,
+        max_scale_error=3.0,
+        auto_stop=False,
+    )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
     print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
 
@@ -256,6 +369,8 @@ def main():
                         help='move to joint configuration')
     parser.add_argument('-mc', '--move_cartesian', action='store_true',
                         help='move to cartesian configuration')
+    parser.add_argument('-pd', '--powder_grounding', action='store_true',
+                        help='powder_grounding')
     parser.add_argument('-mf', '--move_force', action='store_true',
                         help='move towards target force')
     parser.add_argument('-fd', '--free_drive', action='store_true',
@@ -271,6 +386,8 @@ def main():
     parser.add_argument('--namespace', type=str,
                         help='Namespace of arm', default=None)
     args = parser.parse_args()
+
+    rospy.init_node('ur3e_compliance_control')
 
     ns = ""
     joints_prefix = None
@@ -296,6 +413,8 @@ def main():
 
     if args.move_cartesian:
         move_cartesian()
+    if args.powder_grounding:
+        powder_grounding()
     if args.move_force:
         move_force()
     if args.admittance:

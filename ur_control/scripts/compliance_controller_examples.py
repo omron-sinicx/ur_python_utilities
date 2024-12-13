@@ -57,7 +57,7 @@ def move_joints(wait=True):
 
 def spiral_trajectory():
     """
-        Force/Position control. Follow a spiral trajectory on the world's YZ plan while controlling force on Z 
+        Force/Position control. Follow a spiral trajectory on the world's YZ plan while controlling force on Z
     """
     initial_q = [1.57, -1.57, 1.26, -1.57, -1.57, 0]
 
@@ -82,10 +82,10 @@ def spiral_trajectory():
 
 def circular_trajectory():
     """
-        Force/Position control. Follow a circular trajectory on the world's YZ plan while controlling force on Z 
+        Force/Position control. Follow a circular trajectory on the world's YZ plan while controlling force on Z
     """
     initial_q = [1.57, -1.57, 1.26, -1.57, -1.57, 0]
-    
+
     arm.set_joint_positions(positions=initial_q, wait=True, target_time=1)
 
     plane = "YZ"
@@ -147,8 +147,8 @@ def full_force_control(
         selection_matrix=[1., 1., 1., 1., 1., 1.],
         relative_to_ee=False, timeout=10.0, max_force_torque=[200., 200., 200., 5., 5., 5.],
         termination_criteria=None):
-    """ 
-      Use with caution!! 
+    """
+      Use with caution!!
       target_force: list[6], target force for each direction x,y,z,ax,ay,az
       target_position: list[7], target position for each direction x,y,z + quaternion
       selection_matrix: list[6], define which direction is controlled by position(1.0) or force(0.0)
@@ -180,9 +180,9 @@ def full_force_control(
                                              termination_criteria=termination_criteria)
 
 def force_control():
-    """ 
+    """
         Simple example of compliance control
-        selection_matrix: list[6]. define which direction is controlled by position(1.0) or force(0.0) goal. 
+        selection_matrix: list[6]. define which direction is controlled by position(1.0) or force(0.0) goal.
                           Values in between make the controller attempt to achieve both position and force goals.
     """
     arm.zero_ft_sensor()
@@ -207,13 +207,13 @@ def main():
                         help='Circular rotation around a target pose')
     parser.add_argument('--spiral', action='store_true',
                         help='Spiral rotation around a target pose')
-    parser.add_argument('--namespace', type=str, 
-                        help='Namespace of arm', default=None)
+    parser.add_argument('--namespace', type=str,
+                        help='Namespace of arm', default='123')
     args = parser.parse_args()
 
     rospy.init_node('ur3e_compliance_control')
 
-    ns = ''
+    ns = '654'
     joints_prefix = None
     tcp_link = None
 
