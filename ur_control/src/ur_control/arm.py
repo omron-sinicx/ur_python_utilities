@@ -163,7 +163,7 @@ class Arm(object):
                 raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
         elif self.ik_solver == IKSolverType.TRAC_IK:
             try:
-                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, solve_type="Distance")
+                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.005, epsilon=1e-5, solve_type="Distance")
             except Exception as e:
                 rospy.logerr("Could not instantiate TRAC_IK" + str(e))
         elif self.ik_solver == IKSolverType.KDL:
@@ -577,7 +577,7 @@ class Arm(object):
         Returns
         -------
         res : bool or str
-            True if the trajectory is succesfully executed.
+            True if the trajectory is successfully executed.
             If the IK solver fails, return "ik_not_found"
         """
         new_pose = transformations.transform_pose(self.end_effector(), transformation, rotated_frame=relative_to_tcp)
@@ -585,16 +585,17 @@ class Arm(object):
 
 ### FT sensor control ###
 
-    def zero_ft_sensor(self):
-        """ 
+    def zero_ft_sensor(self, sleep_time=0.05):
+        """
         Reset force-torque sensor readings to zeros.
         """
         if not rospy.has_param("use_gazebo_sim"):
             # First try to zero FT from ur_driver
             self._zero_ft()
-            rospy.sleep(0.5)
+            rospy.sleep(sleep_time)
         # Then update filtered one
         self._zero_ft_filtered()
+        rospy.sleep(sleep_time)
 
     def set_ft_filtering(self, active=True):
         """ 

@@ -27,9 +27,10 @@ import threading
 import types
 import rospy
 import numpy as np
+import traceback
 
 from ur_control.arm import Arm
-from ur_control import conversions
+from ur_control import conversions, transformations
 from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
 from ur_control.fzi_utils import (
     is_more_extreme,
@@ -74,6 +75,15 @@ class CompliantController(Arm):
 
         self.current_target_pose = np.zeros(7)
         self.current_wrench_pose = np.zeros(6)
+
+        # parameters to be check if set to True
+        self.step_thresholds = {
+            'position': (True, 0.005),  # meters
+            'orientation': (True, np.deg2rad(1)),  # radians
+            'force': (False, 1e8),  # newtons
+            'torque': (False, 1e8),  # meters/newtons
+        }
+        self.selection_matrix = np.ones(6)
 
         # Monitor external goals
         rospy.Subscriber('%s%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
@@ -252,6 +262,7 @@ class CompliantController(Arm):
         """
         parameters = convert_selection_matrix_to_parameters(selection_matrix)
         self.update_controller_parameters(parameters)
+        self.selection_matrix = np.copy(selection_matrix)
 
     def update_pd_gains(self, p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
         """
@@ -335,7 +346,7 @@ class CompliantController(Arm):
         """
         parameters = {"solver": {}}
         if error_scale:
-            error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
+            # error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
             parameters["solver"].update({"error_scale": round(error_scale, 4)})
         if iterations:
             parameters["solver"].update({"iterations": iterations})
@@ -403,7 +414,7 @@ class CompliantController(Arm):
 
         # loop throw target trajectory
         initial_time = rospy.get_time()
-        step_initial_time = rospy.get_time()
+        last_step_time = rospy.get_time()
 
         result = ExecutionResult.DONE
         if stop_on_target_force and stop_at_wrench is None:
@@ -415,7 +426,8 @@ class CompliantController(Arm):
             rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
 
         # Publish target wrench only once
-        self.set_cartesian_target_wrench(target_wrench)
+        # self.set_cartesian_target_wrench(target_wrench)
+        self.set_cartesian_target_wrench(target_wrench[trajectory_index])
 
         # Publish first trajectory point
         self.set_cartesian_target_pose(trajectory[trajectory_index])
@@ -423,9 +435,13 @@ class CompliantController(Arm):
         if scale_up_error and max_scale_error:
             self.sliding_error(trajectory[trajectory_index], max_scale_error)
 
-        while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
+        while not rospy.is_shutdown():
+            if mode == 'DURATION':
+                if (rospy.get_time() - initial_time) > duration:
+                    break
 
-            current_wrench = self.get_wrench(base_frame_control=True)
+            current_wrench = self.get_wrench()
+            # rospy.loginfo_throttle(1, 'CURRENT F/T {}'.format(current_wrench))
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
@@ -450,19 +466,59 @@ class CompliantController(Arm):
                 result = ExecutionResult.FORCE_TORQUE_EXCEEDED
                 break
 
-            if (rospy.get_time() - step_initial_time) > step_duration:
-                step_initial_time = rospy.get_time()
-                trajectory_index += 1
+            if (rospy.get_time() - last_step_time) > step_duration:
+                # check if we should proceed to the next waypoint
+                if mode == 'DURATION':
+                    # update at fix intervals
+                    last_step_time = rospy.get_time()
+                    trajectory_index += 1
+                elif mode == 'TRACKING_ERROR':
+                    # update at fix intervals if tracking error is low enough
+                    target_pose = trajectory[trajectory_index]
+                    current_pose = self.end_effector()
+
+                    thresholds_ok = True
+
+                    if self.step_thresholds['position'][0]:
+                        position_error = np.linalg.norm(target_pose[:3] - current_pose[:3])
+                        if position_error > self.step_thresholds['position'][1]:
+                            rospy.logwarn_throttle(1, f"{position_error=:0.04f}")
+                            thresholds_ok = False
+                    if self.step_thresholds['orientation'][0]:
+                        orientation_error = np.linalg.norm(transformations.quaternions_orientation_error(target_pose[3:], current_pose[3:]))
+                        if orientation_error > self.step_thresholds['orientation'][1]:
+                            rospy.logwarn_throttle(1, f"{orientation_error=:0.04f}")
+                            thresholds_ok = False
+                    if self.step_thresholds['force'][0]:
+                        force_error = np.linalg.norm((target_wrench[trajectory_index][:3] - current_wrench[:3])*(1-self.selection_matrix[:3]))
+                        if force_error > self.step_thresholds['force'][1]:
+                            rospy.logwarn_throttle(1, f"{force_error=:0.04f}")
+                            thresholds_ok = False
+                    if self.step_thresholds['torque'][0]:
+                        torque_error = np.linalg.norm(target_wrench[trajectory_index][3:] - current_wrench[3:])
+                        if torque_error > self.step_thresholds['torque'][1]:
+                            rospy.logwarn_throttle(1, f"{torque_error=:0.04f}")
+                            thresholds_ok = False
+
+                    if thresholds_ok:
+                        last_step_time = rospy.get_time()
+                        trajectory_index += 1
+                    else:
+                        rospy.sleep(self.min_dt)
+
                 if trajectory_index >= trajectory.shape[0]:
                     break
+
                 # push next point to the controller
                 self.set_cartesian_target_pose(trajectory[trajectory_index])
+                self.set_cartesian_target_wrench(target_wrench[trajectory_index])
+                # rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(target_wrench[trajectory_index]))
 
                 if scale_up_error and max_scale_error:
                     self.sliding_error(trajectory[trajectory_index], max_scale_error)
 
             if func:
-                func(self.end_effector())
+                func(self.end_effector(), current_wrench, trajectory[trajectory_index], target_wrench[trajectory_index])
 
             self.rate.sleep()
 

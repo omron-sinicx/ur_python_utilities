@@ -82,3 +82,12 @@ Then execute the tutorial
 ```
 rosrun ur_control moveit_tutorial.py --tutorial
 ```
+
+## powder grounding
+```
+// bringup
+roslaunch osx_powder_grinding real_robot_bringup.launch
+
+// run
+rosrun ur_control cartesian_compliance_controller_examples.py -pg
+```

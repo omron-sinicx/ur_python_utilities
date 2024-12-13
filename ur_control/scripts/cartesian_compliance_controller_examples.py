@@ -24,8 +24,10 @@
 #
 # Author: Cristian Beltran
 
+import datetime
 import sys
 import signal
+import timeit
 from ur_control import spalg, utils, traj_utils, constants
 from ur_control.fzi_cartesian_compliance_controller import CompliantController
 import argparse
@@ -65,31 +67,74 @@ def move_cartesian():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    selection_matrix = np.ones(6)
+    # selection_matrix = np.ones(6)
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    # selection_matrix = [1, 1, 1, 0, 0, 0]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    # p_gains = [0.5, 0.5, 0.5, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
+    theta = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
+
     ee = arm.end_effector()
+    print("EE", ee)
 
-    p1 = ee.copy()
-    p1[2] -= 0.03
+    # p1 = ee.copy()
+    # p1[2] -= 0.03
 
-    p2 = p1.copy()
-    p2[2] += 0.005
+    # p2 = p1.copy()
+    # p2[2] += 0.005
 
-    trajectory = p1
+    # trajectory = p1
     # trajectory = np.stack((p1, p2))
-    target_force = np.zeros(6)
+    steps = 100
+    # x = np.linspace(-0.1, 0.1, steps)
+    # y = 0.3 * np.ones(steps)
+    # z = 0.08 * np.ones(steps)
+    x = -0.17 * np.ones(steps)
+    y = 0.51 * np.ones(steps)
+    z = 0.0755 * np.ones(steps)
+    trajectory_quat = ee[3:] * np.ones((100, 4))
+    trajectory_pos = np.stack((x, y, z)).T
+    ref_traj = np.zeros((steps, 7))
+    ref_traj[:, :3] = trajectory_pos
+    ref_traj[:, 3:] = trajectory_quat
 
-    def f(x): return rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+    target_force = np.zeros(6) * np.ones((steps, 6))
+    # target_force = np.array([0, 0, -10, 0, 0, 0]) * np.ones((steps, 6))
+
+    arm.set_target_pose(
+        pose=ref_traj[0, :] + np.array([0, 0, 0.01, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :],
+        target_time=3,
+        wait=True,
+    )
+
+    def f(x, w):
+        rospy.loginfo_throttle(0.25, f"x: {x[:3]}")
+        # rospy.loginfo_throttle(
+        #     0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+
     arm.zero_ft_sensor()
-    res = arm.execute_compliance_control(trajectory, target_wrench=target_force, max_force_torque=[50., 50., 50., 5., 5., 5.],
-                                         duration=5, func=f, scale_up_error=True, max_scale_error=3.0, auto_stop=False)
+    res = arm.execute_compliance_control(
+        # trajectory,
+        ref_traj,
+        target_wrench=target_force,
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        # max_force_torque=[500., 500., 500., 50., 50., 50.],
+        duration=15,
+        func=f,
+        scale_up_error=True,
+        max_scale_error=3.0,
+        auto_stop=False,
+    )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
-    print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    # print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
 
 
 def move_force():
@@ -103,7 +148,6 @@ def move_force():
     # arm.set_control_mode("spring-mass-damper")
 
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
-    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
@@ -121,10 +165,14 @@ def move_force():
     # print(transform)
     # print("TF", tf[:3])
 
-    res = arm.execute_compliance_control(ee, target_wrench=target_force,
-                                         max_force_torque=[30., 30., 30., 4., 4., 4.], duration=15,
-                                         stop_at_wrench=stop_at_wrench,
-                                         stop_on_target_force=True)
+    res = arm.execute_compliance_control(
+        ee,
+        target_wrench=target_force,
+        max_force_torque=[30., 30., 30., 4., 4., 4.],
+        duration=15,
+        stop_at_wrench=stop_at_wrench,
+        stop_on_target_force=True,
+    )
     print(res)
     print("EE change", ee - arm.end_effector())
 
@@ -141,7 +189,8 @@ def slicing():
 
     ee = arm.end_effector()
 
-    trajectory = traj_utils.compute_sinusoidal_trajectory(ee, dimension=1, period=3, amplitude=0.02, num_of_points=100)
+    trajectory = traj_utils.compute_sinusoidal_trajectory(
+        ee, dimension=1, period=3, amplitude=0.02, num_of_points=100)
     target_force = [0, 0, -3, 0, 0, 0]  # express in the end_effector_link
 
     res = arm.execute_compliance_control(trajectory, target_wrench=target_force,
@@ -190,7 +239,8 @@ def free_drive():
     # arm.update_stiffness([10, 10, 10, 10, 10, 10])
     # arm.update_stiffness([1000, 1000, 1000, 50, 50, 20])
     # arm.update_stiffness([250, 250, 250, 5, 5, 5])  # 10 for pos can make it drift
-    arm.update_stiffness([100, 100, 100, 5, 5, 5])  # 10 for pos can make it drift
+    # 10 for pos can make it drift
+    arm.update_stiffness([100, 100, 100, 5, 5, 5])
 
 
 # mapping parameter space vs vibration
@@ -216,16 +266,41 @@ def test():
     # start here
     move_joints()
 
-    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    arm.move_relative(
+        transformation=[0, 0, -0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        target_time=0.5,
+        wait=True,
+    )
     # Move down (cut)
-    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    arm.move_relative(
+        transformation=[0, 0, -0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        target_time=0.5,
+        wait=True,
+    )
     for _ in range(3):
         # Move down (cut)
-        arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+        arm.move_relative(
+            transformation=[0, 0, -0.03, 0, 0, 0],
+            relative_to_tcp=False,
+            target_time=0.5,
+            wait=True,
+        )
 
-        # Move back up and to the next initial pose
-        arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
-        arm.move_relative(transformation=[0, 0.01, 0, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
+    # Move back up and to the next initial pose
+    arm.move_relative(
+        transformation=[0, 0, 0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        duration=0.25,
+        wait=True,
+    )
+    arm.move_relative(
+        transformation=[0, 0.01, 0, 0, 0, 0],
+        relative_to_tcp=False,
+        duration=0.25,
+        wait=True,
+    )
 
 
 def enable_compliance_control():
@@ -240,11 +315,13 @@ def enable_compliance_control():
     # arm.update_selection_matrix(np.array([0.1]*6))
 
     arm.activate_cartesian_controller()
-    arm.set_cartesian_target_pose(arm.end_effector(tip_link="b_bot_gripper_tip_link"))
+    arm.set_cartesian_target_pose(
+        arm.end_effector(tip_link="b_bot_gripper_tip_link"))
 
     for _ in range(30):
         print("current target pose", arm.current_target_pose[:3])
-        print("error", arm.current_target_pose[:3] - arm.end_effector(tip_link="b_bot_gripper_tip_link")[:3])
+        print("error", arm.current_target_pose[:3] -
+              arm.end_effector(tip_link="b_bot_gripper_tip_link")[:3])
         rospy.sleep(1)
 
     arm.activate_joint_trajectory_controller()
@@ -257,6 +334,10 @@ def main():
                         help='move to joint configuration')
     parser.add_argument('-mc', '--move_cartesian', action='store_true',
                         help='move to cartesian configuration')
+    parser.add_argument('-pg', '--powder_grounding', action='store_true',
+                        help='powder_grounding')
+    parser.add_argument('-pgi', '--powder_grounding_ioana', action='store_true',
+                        help='powder_grounding ioana')
     parser.add_argument('-mf', '--move_force', action='store_true',
                         help='move towards target force')
     parser.add_argument('-fd', '--free_drive', action='store_true',
@@ -289,14 +370,19 @@ def main():
                               ee_link=tcp_link,
                               ft_topic='wrench',
                               gripper_type=None)
-    
-    arm.dashboard_services.activate_ros_control_on_ur()
+
+    if not arm.dashboard_services.activate_ros_control_on_ur():
+        exit(0)
 
     if args.move_joints:
         move_joints()
 
     if args.move_cartesian:
         move_cartesian()
+    if args.powder_grounding_ioana:
+        powder_grinding_ioana()
+    if args.powder_grounding:
+        powder_grounding()
     if args.move_force:
         move_force()
     if args.admittance:
