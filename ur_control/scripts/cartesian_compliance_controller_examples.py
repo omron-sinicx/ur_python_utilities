@@ -824,6 +824,8 @@ def main():
                         help='Namespace of arm', default=None)
     args = parser.parse_args()
 
+    rospy.init_node('ur3e_compliance_control')
+
     ns = ""
     joints_prefix = None
     tcp_link = 'gripper_tip_link'
