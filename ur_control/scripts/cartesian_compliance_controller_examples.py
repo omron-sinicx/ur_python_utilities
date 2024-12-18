@@ -188,6 +188,7 @@ def recompute_trajectory(R, h, num_waypoints):
 
     load_N = np.random.randint(low=1, high=20)  # take a random force reference
     ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 0, 0, 0, 0]]*num_waypoints)
 
     return ref_traj, ref_force
 
@@ -323,9 +324,13 @@ def powder_grounding():
     plt.figure()
     plt.axis("equal")
     plt.plot(x_list_np[:, 0], x_list_np[:, 1])
+    plt.xlabel("x [m]")
+    plt.ylabel("y [m]")
     plt.figure()
-    plt.plot(w_list_np[:, :])
-    plt.legend(["x", "y", "z", "rx", "ry", "rz"])
+    plt.plot(w_list_np[:, :3])
+    # plt.legend(["x", "y", "z", "rx", "ry", "rz"])
+    plt.legend(["x", "y", "z"])
+    plt.ylabel("Force [N]")
     plt.show()
 
 
