@@ -203,7 +203,7 @@ See help inside the example with the '?' key for key bindings.
 
     global arm
     arm = Arm(namespace=args.namespace,
-              gripper_type=gripper,
+              gripper_type=None,
               joint_names_prefix=joints_prefix,
               ee_link=tcp_link)
 

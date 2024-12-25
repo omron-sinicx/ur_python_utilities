@@ -186,21 +186,36 @@ def recompute_trajectory(R, h, num_waypoints):
         ref_traj[ind, 3:] = quat_ref
         ind += 1
 
-    load_N = np.random.randint(low=1, high=20)  # take a random force reference
-    ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
+    # load_N = np.random.randint(low=1, high=20)  # take a random force reference
+    # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
     # ref_force = np.array([[0, 0, 0, 0, 0, 0]]*num_waypoints)
+    ref_force = np.array([[0, 0, 2.0, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 10.0, 0, 0, 0]]*num_waypoints)
 
     return ref_traj, ref_force
 
 
 def powder_grounding():
-    ref_traj, ref_force = recompute_trajectory(R=0.0085, h=0.004, num_waypoints=100)
-    ref_traj += np.array([0, 0.5, 0, 0, 0, 0, 0])
+    ref_traj, ref_force = recompute_trajectory(
+        R=0.0085,
+        h=0.004,
+        num_waypoints=100,
+    )
+    # ref_traj += np.array([0, 0.5, 0.0, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0.5, 0.05, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0.5, 0.081, 0, 0, 0, 0])
+    ref_traj += np.array([0, 0.5, 0.01, 0, 0, 0, 0])
     print(ref_traj)
     # print(ref_force)
 
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
+    arm.set_target_pose(
+        pose=ref_traj[0, :] + np.array([0, 0, 0.01, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :],
+        target_time=3,
+        wait=True,
+    )
 
     # arm.set_position_control_mode(False)
     # arm.set_control_mode(mode="spring-mass-damper")
@@ -210,8 +225,8 @@ def powder_grounding():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    selection_matrix = np.ones(6)
-    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    # selection_matrix = np.ones(6)
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -241,6 +256,7 @@ def powder_grounding():
         # print((x*y)/r^4*(1-r^2)*(r^2-x^2))
         # print(x/r)
         u_z = 1/r * np.array([x, y, z])
+        # u_z = -u_z
         # print(u_z)
         x_basis = np.array([1, 0, 0])
         u_x = x_basis - np.sum(x_basis*u_z)*u_z
@@ -261,6 +277,14 @@ def powder_grounding():
 
     x_list = []
     w_list = []
+    w_ref_list = []
+    R_list = []
+    # k = 0
+    global k
+    k = 0
+
+    # center = [0.0, 0.5, 0.04]
+    center = [0.0, 0.5, 0.081]
 
     def f(x, w):
         x_list.append(x)
@@ -268,7 +292,8 @@ def powder_grounding():
         rospy.loginfo_throttle(0.25, f"x: {x[:]}")
         rospy.loginfo_throttle(0.25, f"w: {w[:]}")
         rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
-        R = R_base2surface(pos=x[:3])
+        R = R_base2surface(pos=x[:3], center=center)
+        R_list.append(R)
         # print(R)
         x, y, z = x[0], x[1], x[2]
         # print(x, y, z)
@@ -278,29 +303,35 @@ def powder_grounding():
             [-y, x,  0],
 
         ])
-        T_6x6 = np.block([  # transformation matrix from base to surface
+        Adjoint_T = np.block([  # transformation matrix from base to surface
             # [R, px @ R],
             # [np.zeros((3, 3)), R],
             [R, np.zeros((3, 3))],
             [px @ R, R],
         ])
-        T_6x6_inv = np.block([  # transformation matrix from surface to base
-            # [R.T, (px @ R).T],
-            # [np.zeros((3, 3)), R.T],
-            [R.T, np.zeros((3, 3))],
-            [(px @ R).T, R.T],
-        ])
+        # Adjoint_T_inv = np.block([  # transformation matrix from surface to base
+        #     # [R.T, (px @ R).T],
+        #     # [np.zeros((3, 3)), R.T],
+        #     [R.T, np.zeros((3, 3))],
+        #     [(px @ R).T, R.T],
+        # ])
         # print(T_6x6 @ T_6x6_inv)
         # print(np.sum(R[:, 0] * R[:, 2]))
         # print(np.sum(R[:, 1] * R[:, 2]))
         # print(np.sum(R[:, 0] * R[:, 1]))
-        selection_matrix_transformed = T_6x6_inv@np.diag(selection_matrix)@T_6x6
+        # selection_matrix_transformed = T_6x6_inv@np.diag(selection_matrix)@T_6x6
         # print("selection_matrix_transformed:")
         # print(selection_matrix_transformed)
         # selection_matrix_transformed_inv = T_6x6_inv@(np.eye(6) - np.diag(selection_matrix))@T_6x6
         # print("selection_matrix_transformed_inv:")
         # print(selection_matrix_transformed_inv)
         # arm.update_selection_matrix(selection_matrix_transformed)
+        global k
+        idx = k*100//(500*30)
+        w_ref_list.append(Adjoint_T @ ref_force[idx, :])
+        k = k+1
+        # print(k)
+        print(idx)
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
@@ -309,7 +340,8 @@ def powder_grounding():
         ref_traj,
         target_wrench=ref_force[0],
         max_force_torque=[50., 50., 50., 5., 5., 5.],
-        duration=30,
+        # duration=30,
+        duration=15,
         func=f,
         scale_up_error=True,
         max_scale_error=3.0,
@@ -321,16 +353,70 @@ def powder_grounding():
     import matplotlib.pyplot as plt
     x_list_np = np.array(x_list)
     w_list_np = np.array(w_list)
+    w_ref_list_np = np.array(w_ref_list)
     plt.figure()
     plt.axis("equal")
+    plt.plot(ref_traj[:, 0], ref_traj[:, 1],ls="--")
     plt.plot(x_list_np[:, 0], x_list_np[:, 1])
     plt.xlabel("x [m]")
     plt.ylabel("y [m]")
+    plt.legend(["pos_dis", "pos_res"])
+
     plt.figure()
     plt.plot(w_list_np[:, :3])
+    plt.plot(w_ref_list_np[:, :3])
     # plt.legend(["x", "y", "z", "rx", "ry", "rz"])
-    plt.legend(["x", "y", "z"])
+    # plt.legend(["x", "y", "z"])
+    plt.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
     plt.ylabel("Force [N]")
+
+    # plt.figure()
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_xlabel("x", size=14)
+    ax.set_ylabel("y", size=14)
+    ax.set_zlabel("z", size=14)
+    x = x_list_np[:, 0]
+    y = x_list_np[:, 1]
+    z = x_list_np[:, 2]
+    ax.plot(x, y, z, color='tab:blue', marker='.', linestyle='-')
+    ax.scatter(center[0], center[1], center[2], color='tab:red', marker='o')
+
+    # lim_range_x = np.max(x) - 0
+    # lim_range_y = np.max(y) - np.min(y)
+    # lim_range_z = np.max(z) - np.min(z)
+    # lim_range = np.max([lim_range_x, lim_range_y, lim_range_z])
+    # ax.set_xlim(0, lim_range)
+    # ax.set_ylim(-lim_range / 2, lim_range / 2)
+    # lim_range = 1.0
+    # ax.set_xlim(-lim_range / 2, lim_range / 2)
+    # ax.set_ylim(0, lim_range)
+    # ax.set_zlim(0, lim_range)
+
+    # origin
+    # ax.quiver(0.0, 0.0, 0.0, 1.0 / 20, 0.0, 0.0, color='r', label='X')
+    # ax.quiver(0.0, 0.0, 0.0, 0.0, 1.0 / 20, 0.0, color='g', label='Y')
+    # ax.quiver(0.0, 0.0, 0.0, 0.0, 0.0, 1.0 / 20, color='b', label='Z')
+    ax.quiver(center[0], center[1], center[2], 1.0 / 200, 0.0, 0.0, color='r', label='X')
+    ax.quiver(center[0], center[1], center[2], 0.0, 1.0 / 200, 0.0, color='g', label='Y')
+    ax.quiver(center[0], center[1], center[2], 0.0, 0.0, 1.0 / 200, color='b', label='Z')
+
+    for j in range(len(R_list) // 100):
+        i = j * 100
+        rotation_matrix = R_list[i]
+
+        rot_vec_x = rotation_matrix[:, 0]
+        rot_vec_y = rotation_matrix[:, 1]
+        rot_vec_z = rotation_matrix[:, 2]
+
+        rot_vec_x /= 200
+        rot_vec_y /= 200
+        rot_vec_z /= 200
+
+        ax.quiver(x[i], y[i], z[i], rot_vec_x[0], rot_vec_x[1], rot_vec_x[2], color='r', label='X')
+        ax.quiver(x[i], y[i], z[i], rot_vec_y[0], rot_vec_y[1], rot_vec_y[2], color='g', label='Y')
+        ax.quiver(x[i], y[i], z[i], rot_vec_z[0], rot_vec_z[1], rot_vec_z[2], color='b', label='Z')
+
     plt.show()
 
 
