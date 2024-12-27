@@ -190,7 +190,8 @@ def recompute_trajectory(R, h, num_waypoints):
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
     # ref_force = np.array([[0, 0, 0, 0, 0, 0]]*num_waypoints)
     ref_force = np.array([[0, 0, 2.0, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 10.0, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 3.0, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 20.0, 0, 0, 0]]*num_waypoints)
 
     return ref_traj, ref_force
 
@@ -211,7 +212,7 @@ def powder_grounding():
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
     arm.set_target_pose(
-        pose=ref_traj[0, :] + np.array([0, 0, 0.01, 0, 0, 0, 0]),
+        pose=ref_traj[0, :] + np.array([0, 0, 0.005, 0, 0, 0, 0]),
         # pose=ref_traj[0, :],
         target_time=3,
         wait=True,
@@ -284,7 +285,8 @@ def powder_grounding():
     k = 0
 
     # center = [0.0, 0.5, 0.04]
-    center = [0.0, 0.5, 0.081]
+    center = [0.0, 0.5, 0.05]
+    # center = [0.0, 0.5, 0.081]
 
     def f(x, w):
         x_list.append(x)
@@ -379,7 +381,11 @@ def powder_grounding():
     x = x_list_np[:, 0]
     y = x_list_np[:, 1]
     z = x_list_np[:, 2]
-    ax.plot(x, y, z, color='tab:blue', marker='.', linestyle='-')
+    ax.plot(x, y, z, color='tab:orange', marker='.', linestyle='-')
+    x_ref = ref_traj[:, 0]
+    y_ref = ref_traj[:, 1]
+    z_ref = ref_traj[:, 2]
+    ax.plot(x_ref, y_ref, z_ref, color='tab:blue', marker='.', linestyle='--')
     ax.scatter(center[0], center[1], center[2], color='tab:red', marker='o')
 
     # lim_range_x = np.max(x) - 0
@@ -413,9 +419,14 @@ def powder_grounding():
         rot_vec_y /= 200
         rot_vec_z /= 200
 
-        ax.quiver(x[i], y[i], z[i], rot_vec_x[0], rot_vec_x[1], rot_vec_x[2], color='r', label='X')
-        ax.quiver(x[i], y[i], z[i], rot_vec_y[0], rot_vec_y[1], rot_vec_y[2], color='g', label='Y')
-        ax.quiver(x[i], y[i], z[i], rot_vec_z[0], rot_vec_z[1], rot_vec_z[2], color='b', label='Z')
+        # ax.quiver(x[i], y[i], z[i], rot_vec_x[0], rot_vec_x[1], rot_vec_x[2], color="r", label="X")
+        # ax.quiver(x[i], y[i], z[i], rot_vec_y[0], rot_vec_y[1], rot_vec_y[2], color="g", label="Y")
+        # ax.quiver(x[i], y[i], z[i], rot_vec_z[0], rot_vec_z[1], rot_vec_z[2], color="b", label="Z")
+
+        w_res = w_list_np[i] / 200
+        w_ref = w_ref_list_np[i] / 200
+        ax.quiver(x[i], y[i], z[i], w_res[0], w_res[1], w_res[2], color="tab:orange", label="Z")
+        ax.quiver(x[i], y[i], z[i], w_ref[0], w_ref[1], w_ref[2], color="tab:blue", label="Z")
 
     plt.show()
 
@@ -584,7 +595,7 @@ def main():
                         help='move to joint configuration')
     parser.add_argument('-mc', '--move_cartesian', action='store_true',
                         help='move to cartesian configuration')
-    parser.add_argument('-pd', '--powder_grounding', action='store_true',
+    parser.add_argument('-pg', '--powder_grounding', action='store_true',
                         help='powder_grounding')
     parser.add_argument('-mf', '--move_force', action='store_true',
                         help='move towards target force')
