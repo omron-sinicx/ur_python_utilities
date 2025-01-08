@@ -329,7 +329,8 @@ class CompliantController(Arm):
             rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(np.round(stop_at_wrench[stop_target_wrench_mask], 2)))
 
         # Publish target wrench only once
-        target_wrench = target_wrench.reshape((-1, 6))  # Assuming this format [fx,fy,fz,tx,ty,tz]
+        # self.set_cartesian_target_wrench(target_wrench)
+        self.set_cartesian_target_wrench(target_wrench[trajectory_index])
 
         self.set_cartesian_target_wrench(target_wrench[trajectory_index])
 

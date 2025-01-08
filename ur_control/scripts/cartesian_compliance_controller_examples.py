@@ -86,7 +86,8 @@ def move_cartesian():
 
     def f(x):
         rospy.loginfo_throttle(0.25, f"x: {x[:3]}")
-        rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+        rospy.loginfo_throttle(
+            0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
@@ -107,8 +108,11 @@ def recompute_trajectory(R, h, num_waypoints):
     # Compute reference trajectory and reference force profile
 
     # mortar surface function and derivatives
-    def fx(x, y): return 4*x**3 * 11445.39 + y**2 * 2*x * 22890.7 + 2*x * 3.11558
-    def fy(x, y): return 4*y**3 * 11445.39 + 2*y * x**2 * 22890.7 + 2*y * 3.11558
+    def fx(x, y): return 4*x**3 * 11445.39 + \
+        y**2 * 2*x * 22890.7 + 2*x * 3.11558
+
+    def fy(x, y): return 4*y**3 * 11445.39 + \
+        2*y * x**2 * 22890.7 + 2*y * 3.11558
 
     def get_orientation_quaternion_smooth(n, prev_quat=None, prev_R=None):
         if prev_R is None:
@@ -138,7 +142,8 @@ def recompute_trajectory(R, h, num_waypoints):
 
         return quat, R
 
-    h = np.clip(h, 0.01, 0.04)  # make sure it's still inside the mortar as height
+    # make sure it's still inside the mortar as height
+    h = np.clip(h, 0.01, 0.04)
     # table_height = 0.8
     table_height = 0.0
     initial_pose = [0.0, R, table_height+h, 0.0, 0.9990052, 0.04459406, 0.0]
@@ -177,42 +182,75 @@ def recompute_trajectory(R, h, num_waypoints):
         normal_vect_direction = n/np.linalg.norm(n)
 
         try:
-            quat_ref, R = get_orientation_quaternion_smooth(normal_vect_direction, quat_ref, R)
+            quat_ref, R = get_orientation_quaternion_smooth(
+                normal_vect_direction, quat_ref, R)
         except:
             # first point won't have a rotation matrix to refer to
-            quat_ref, R = get_orientation_quaternion_smooth(normal_vect_direction)
+            quat_ref, R = get_orientation_quaternion_smooth(
+                normal_vect_direction)
 
         ref_traj[ind, :3] = ref_traj_pos[ind]
         ref_traj[ind, 3:] = quat_ref
         ind += 1
 
+    # offset the trajectory to be above the surface
+    ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
+
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
     # ref_force = np.array([[0, 0, 0, 0, 0, 0]]*num_waypoints)
-    ref_force = np.array([[0, 0, 2.0, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 3.0, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 20.0, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 1.0, 0, 0, 0]]*num_waypoints)
+    ref_force = np.array([[0, 0, -10.0, 0, 0, 0]]*num_waypoints)
+
+    center = [0.0, 0.5, 0.05]
+    for i in range(num_waypoints):
+        R = R_base2surface(pos=ref_traj[i, :3], center=center)
+        print(R)
+        Adjoint_T = np.block([
+            [R, np.zeros((3, 3))],
+            [np.zeros((3, 3)), R],
+        ])
+        ref_force[i, :] = Adjoint_T @ ref_force[i, :]
 
     return ref_traj, ref_force
 
 
+def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
+    x, y, z = pos
+    a, b, c = center
+    # x, y, z = x - a, y - b, z - c
+    x, y, z = a-x, b-y, c-z
+    r = np.sqrt(x**2 + y**2 + z**2)
+    u_z = 1/r * np.array([x, y, z])
+    x_basis = np.array([1, 0, 0])
+    u_x = x_basis - np.sum(x_basis*u_z)*u_z
+    u_x /= np.linalg.norm(u_x)
+    y_basis = np.array([0, 1, 0])
+    u_y = y_basis - np.sum(y_basis*u_z)*u_z - np.sum(y_basis*u_x)*u_x
+    u_y /= np.linalg.norm(u_y)
+    R = np.array([
+        u_x, u_y, u_z,
+    ]).T
+    return R
+
+
 def powder_grounding():
     ref_traj, ref_force = recompute_trajectory(
-        R=0.0085,
-        h=0.004,
+        # R=0.0085,
+        # h=0.004,
+        R=0.008,
+        h=0.005,
         num_waypoints=100,
     )
-    # ref_traj += np.array([0, 0.5, 0.0, 0, 0, 0, 0])
-    # ref_traj += np.array([0, 0.5, 0.05, 0, 0, 0, 0])
-    # ref_traj += np.array([0, 0.5, 0.081, 0, 0, 0, 0])
-    ref_traj += np.array([0, 0.5, 0.01, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0.5, 0.005, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
     print(ref_traj)
-    # print(ref_force)
+    print(ref_force)
 
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
     arm.set_target_pose(
-        pose=ref_traj[0, :] + np.array([0, 0, 0.005, 0, 0, 0, 0]),
+        pose=ref_traj[0, :] + np.array([0, 0, 0.002, 0, 0, 0, 0]),
         # pose=ref_traj[0, :],
         target_time=3,
         wait=True,
@@ -247,35 +285,6 @@ def powder_grounding():
     target_force = np.zeros(6)
     # target_force = np.ones(6)
 
-    def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
-        x, y, z = pos
-        a, b, c = center
-        x, y, z = x - a, y - b, z - c
-        r = np.sqrt(x**2 + y**2 + z**2)
-        # print(x, y, z)
-        # print(1-(x/r)**2)
-        # print((x*y)/r^4*(1-r^2)*(r^2-x^2))
-        # print(x/r)
-        u_z = 1/r * np.array([x, y, z])
-        # u_z = -u_z
-        # print(u_z)
-        x_basis = np.array([1, 0, 0])
-        u_x = x_basis - np.sum(x_basis*u_z)*u_z
-        u_x /= np.linalg.norm(u_x)
-        y_basis = np.array([0, 1, 0])
-        u_y = y_basis - np.sum(y_basis*u_z)*u_z - np.sum(y_basis*u_x)*u_x
-        u_y /= np.linalg.norm(u_y)
-        # u_y = y_basis - np.sum(y_basis*u_z)*u_z
-        R = np.array([
-            u_x, u_y, u_z,
-        ]).T
-        return R
-        # return np.array([
-        #     [1-(x/r)**2,  -x*y/r**2 -x*y/r**2,      x/r],
-        #     [ -x*y/r**2, 1-(y/r)**2 -x*y/r**2*x*y/r**2, y/r],
-        #     [ -x*z/r**2,  -y*z/r**2 -x*y/r**2*x*z/r**2,  z/r],
-        # ])
-
     x_list = []
     w_list = []
     w_ref_list = []
@@ -289,50 +298,39 @@ def powder_grounding():
     # center = [0.0, 0.5, 0.081]
 
     def f(x, w):
+        global k
+        idx = k*100//(500*30)
+        print("pos_ref:", ref_traj[idx, :])
+        print("pos_res:", x)
         x_list.append(x)
         w_list.append(w)
         rospy.loginfo_throttle(0.25, f"x: {x[:]}")
         rospy.loginfo_throttle(0.25, f"w: {w[:]}")
-        rospy.loginfo_throttle(0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
-        R = R_base2surface(pos=x[:3], center=center)
+        rospy.loginfo_throttle(
+            0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
+        # R = R_base2surface(pos=x[:3], center=center)
+        R = R_base2surface(pos=ref_traj[idx, :3], center=center)
+        print("R_det:", np.linalg.det(R))
         R_list.append(R)
         # print(R)
-        x, y, z = x[0], x[1], x[2]
+        # x, y, z = x[0], x[1], x[2]
         # print(x, y, z)
-        px = np.array([
-            [0, -z,  y],
-            [z,  0, -x],
-            [-y, x,  0],
-
-        ])
-        Adjoint_T = np.block([  # transformation matrix from base to surface
-            # [R, px @ R],
-            # [np.zeros((3, 3)), R],
-            [R, np.zeros((3, 3))],
-            [px @ R, R],
-        ])
-        # Adjoint_T_inv = np.block([  # transformation matrix from surface to base
-        #     # [R.T, (px @ R).T],
-        #     # [np.zeros((3, 3)), R.T],
-        #     [R.T, np.zeros((3, 3))],
-        #     [(px @ R).T, R.T],
+        # px = np.array([
+        #     [0, -z,  y],
+        #     [z,  0, -x],
+        #     [-y, x,  0],
         # ])
-        # print(T_6x6 @ T_6x6_inv)
-        # print(np.sum(R[:, 0] * R[:, 2]))
-        # print(np.sum(R[:, 1] * R[:, 2]))
-        # print(np.sum(R[:, 0] * R[:, 1]))
-        # selection_matrix_transformed = T_6x6_inv@np.diag(selection_matrix)@T_6x6
-        # print("selection_matrix_transformed:")
-        # print(selection_matrix_transformed)
-        # selection_matrix_transformed_inv = T_6x6_inv@(np.eye(6) - np.diag(selection_matrix))@T_6x6
-        # print("selection_matrix_transformed_inv:")
-        # print(selection_matrix_transformed_inv)
-        # arm.update_selection_matrix(selection_matrix_transformed)
-        global k
-        idx = k*100//(500*30)
-        w_ref_list.append(Adjoint_T @ ref_force[idx, :])
+        # Adjoint_T = np.block([  # transformation matrix from base to surface
+        #     # [R, px @ R],
+        #     # [np.zeros((3, 3)), R],
+        #     # [R, np.zeros((3, 3))],
+        #     # [px @ R, R],
+        #     [R, np.zeros((3, 3))],
+        #     [np.zeros((3, 3)), R],
+        # ])
+        # w_ref_list.append(Adjoint_T @ ref_force[idx, :])
+        w_ref_list.append(ref_force[idx, :])
         k = k+1
-        # print(k)
         print(idx)
 
     arm.zero_ft_sensor()
@@ -340,17 +338,19 @@ def powder_grounding():
         # trajectory,
         # target_wrench=target_force,
         ref_traj,
-        target_wrench=ref_force[0],
-        max_force_torque=[50., 50., 50., 5., 5., 5.],
-        # duration=30,
-        duration=15,
+        target_wrench=ref_force,
+        # max_force_torque=[50., 50., 50., 5., 5., 5.],
+        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        duration=30,
+        # duration=15,
         func=f,
         scale_up_error=True,
         max_scale_error=3.0,
         auto_stop=False,
     )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
-    print("Pose error", np.round(trajectory[:, :3] - arm.end_effector()[:3], 4))
+    print("Pose error", np.round(
+        trajectory[:, :3] - arm.end_effector()[:3], 4))
 
     import matplotlib.pyplot as plt
     x_list_np = np.array(x_list)
@@ -358,7 +358,7 @@ def powder_grounding():
     w_ref_list_np = np.array(w_ref_list)
     plt.figure()
     plt.axis("equal")
-    plt.plot(ref_traj[:, 0], ref_traj[:, 1],ls="--")
+    plt.plot(ref_traj[:, 0], ref_traj[:, 1], ls="--")
     plt.plot(x_list_np[:, 0], x_list_np[:, 1])
     plt.xlabel("x [m]")
     plt.ylabel("y [m]")
@@ -366,7 +366,7 @@ def powder_grounding():
 
     plt.figure()
     plt.plot(w_list_np[:, :3])
-    plt.plot(w_ref_list_np[:, :3])
+    plt.plot(-w_ref_list_np[:, :3])
     # plt.legend(["x", "y", "z", "rx", "ry", "rz"])
     # plt.legend(["x", "y", "z"])
     plt.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
@@ -403,11 +403,14 @@ def powder_grounding():
     # ax.quiver(0.0, 0.0, 0.0, 1.0 / 20, 0.0, 0.0, color='r', label='X')
     # ax.quiver(0.0, 0.0, 0.0, 0.0, 1.0 / 20, 0.0, color='g', label='Y')
     # ax.quiver(0.0, 0.0, 0.0, 0.0, 0.0, 1.0 / 20, color='b', label='Z')
-    ax.quiver(center[0], center[1], center[2], 1.0 / 200, 0.0, 0.0, color='r', label='X')
-    ax.quiver(center[0], center[1], center[2], 0.0, 1.0 / 200, 0.0, color='g', label='Y')
-    ax.quiver(center[0], center[1], center[2], 0.0, 0.0, 1.0 / 200, color='b', label='Z')
+    ax.quiver(center[0], center[1], center[2], 1.0 /
+              200, 0.0, 0.0, color='r', label='X')
+    ax.quiver(center[0], center[1], center[2], 0.0,
+              1.0 / 200, 0.0, color='g', label='Y')
+    ax.quiver(center[0], center[1], center[2], 0.0,
+              0.0, 1.0 / 200, color='b', label='Z')
 
-    for j in range(len(R_list) // 100):
+    for j in range(len(w_list_np) // 100):
         i = j * 100
         rotation_matrix = R_list[i]
 
@@ -423,10 +426,30 @@ def powder_grounding():
         # ax.quiver(x[i], y[i], z[i], rot_vec_y[0], rot_vec_y[1], rot_vec_y[2], color="g", label="Y")
         # ax.quiver(x[i], y[i], z[i], rot_vec_z[0], rot_vec_z[1], rot_vec_z[2], color="b", label="Z")
 
-        w_res = w_list_np[i] / 200
-        w_ref = w_ref_list_np[i] / 200
-        ax.quiver(x[i], y[i], z[i], w_res[0], w_res[1], w_res[2], color="tab:orange", label="Z")
-        ax.quiver(x[i], y[i], z[i], w_ref[0], w_ref[1], w_ref[2], color="tab:blue", label="Z")
+        w_res = w_list_np[i] / 2000
+        w_ref = w_ref_list_np[i] / 2000
+        ax.quiver(x[i], y[i], z[i],
+                  w_res[0], w_res[1], w_res[2],
+                  color="tab:orange", label="Z")
+        ax.quiver(x[i], y[i], z[i],
+                  w_ref[0], w_ref[1], w_ref[2],
+                  color="tab:blue", label="Z")
+
+    # Make data
+    X = np.arange(-0.04, 0.04, 0.001)
+    Y = np.arange(0.5 - 0.04, 0.5 + 0.04, 0.001)
+    X, Y = np.meshgrid(X, Y)
+    Z = -np.sqrt(-X**2 + -(Y-0.5)**2 + 0.04**2) + 0.05
+
+    # Plot the surface
+    from matplotlib import cm
+    surf = ax.plot_surface(
+        X, Y, Z,
+        cmap=cm.coolwarm,
+        linewidth=0,
+        antialiased=False,
+        alpha=0.25,
+    )
 
     plt.show()
 
@@ -480,7 +503,8 @@ def slicing():
 
     ee = arm.end_effector()
 
-    trajectory = traj_utils.compute_sinusoidal_trajectory(ee, dimension=1, period=3, amplitude=0.02, num_of_points=100)
+    trajectory = traj_utils.compute_sinusoidal_trajectory(
+        ee, dimension=1, period=3, amplitude=0.02, num_of_points=100)
     target_force = [0, 0, -3, 0, 0, 0]  # express in the end_effector_link
 
     res = arm.execute_compliance_control(trajectory, target_wrench=target_force,
@@ -529,7 +553,8 @@ def free_drive():
     # arm.update_stiffness([10, 10, 10, 10, 10, 10])
     # arm.update_stiffness([1000, 1000, 1000, 50, 50, 20])
     # arm.update_stiffness([250, 250, 250, 5, 5, 5])  # 10 for pos can make it drift
-    arm.update_stiffness([100, 100, 100, 5, 5, 5])  # 10 for pos can make it drift
+    # 10 for pos can make it drift
+    arm.update_stiffness([100, 100, 100, 5, 5, 5])
 
 
 # mapping parameter space vs vibration
@@ -578,11 +603,13 @@ def test():
     # arm.update_selection_matrix(np.array([0.1]*6))
 
     arm.activate_cartesian_controller()
-    arm.set_cartesian_target_pose(arm.end_effector(tip_link="b_bot_gripper_tip_link"))
+    arm.set_cartesian_target_pose(
+        arm.end_effector(tip_link="b_bot_gripper_tip_link"))
 
     for _ in range(30):
         print("current target pose", arm.current_target_pose[:3])
-        print("error", arm.current_target_pose[:3] - arm.end_effector(tip_link="b_bot_gripper_tip_link")[:3])
+        print("error", arm.current_target_pose[:3] -
+              arm.end_effector(tip_link="b_bot_gripper_tip_link")[:3])
         rospy.sleep(1)
 
     arm.activate_joint_trajectory_controller()
