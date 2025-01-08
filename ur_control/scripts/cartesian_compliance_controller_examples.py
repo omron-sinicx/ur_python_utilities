@@ -114,7 +114,6 @@ def move_cartesian():
 
     def f(x, w):
         rospy.loginfo_throttle(0.25, f"x: {x[:3]}")
-        rospy.loginfo_throttle(0.25, f"w: {w[:3]}")
         # rospy.loginfo_throttle(
         #     0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
 
