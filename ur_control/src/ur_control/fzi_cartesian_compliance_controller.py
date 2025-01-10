@@ -343,6 +343,7 @@ class CompliantController(Arm):
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
             current_wrench = self.get_wrench(base_frame_control=True)
+            rospy.loginfo_throttle(1, 'CURRENT F/T {}'.format(current_wrench))
 
             if termination_criteria is not None:
                 assert isinstance(termination_criteria, types.LambdaType), "Invalid termination criteria, expecting lambda/function with one argument[current pose array[7]]"
@@ -371,6 +372,7 @@ class CompliantController(Arm):
                 # push next point to the controller
                 self.set_cartesian_target_pose(trajectory[trajectory_index])
                 self.set_cartesian_target_wrench(target_wrench[trajectory_index])
+                rospy.loginfo_throttle(1, 'TARGET F/T {}'.format(target_wrench[trajectory_index]))
 
                 if scale_up_error and max_scale_error:
                     self.sliding_error(trajectory[trajectory_index], max_scale_error)

@@ -244,14 +244,16 @@ def powder_grounding():
         num_waypoints=num_waypoints,
     )
     # ref_traj += np.array([0, 0.5, 0.005, 0, 0, 0, 0])
-    ref_traj += np.array([0, 0, 0.002, 0, 0, 0, 0])
+    ref_traj += np.array([0, 0, 0.1, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0, 0.0, 0, 0, 0, 0])
     print(ref_traj)
     print(ref_force)
 
-    q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
-    arm.set_joint_positions(positions=q, target_time=3, wait=True)
+    theta = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
     arm.set_target_pose(
-        pose=ref_traj[0, :] + np.array([0, 0, 0.002, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :] + np.array([0, 0, 0.002, 0, 0, 0, 0]),
+        pose=ref_traj[0, :],
         target_time=3,
         wait=True,
     )
@@ -269,7 +271,9 @@ def powder_grounding():
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    # p_gains = [0.005, 0.005, 0.005, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    # d_gains = [0, 0, 0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
     ee = arm.end_effector()
@@ -302,18 +306,18 @@ def powder_grounding():
     def f(x, w):
         global k
         idx = num_waypoints * k // (frequency * duration)
-        print(idx)
-        print("pos_ref:", ref_traj[idx, :])
-        print("pos_res:", x)
+        # print(idx)
+        # print("pos_ref:", ref_traj[idx, :])
+        # print("pos_res:", x)
         x_list.append(x)
         w_list.append(w)
-        rospy.loginfo_throttle(0.25, f"x: {x[:]}")
-        rospy.loginfo_throttle(0.25, f"w: {w[:]}")
-        rospy.loginfo_throttle(
-            0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
+        # rospy.loginfo_throttle(0.25, f"x: {x[:]}")
+        # rospy.loginfo_throttle(0.25, f"w: {w[:]}")
+        # rospy.loginfo_throttle(
+        #     0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
         # R = R_base2surface(pos=x[:3], center=center)
         R = R_base2surface(pos=ref_traj[idx, :3], center=center)
-        print("R_det:", np.linalg.det(R))
+        # print("R_det:", np.linalg.det(R))
         R_list.append(R)
         # print(R)
         # x, y, z = x[0], x[1], x[2]
