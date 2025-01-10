@@ -219,7 +219,7 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
     x, y, z = pos
     a, b, c = center
     # x, y, z = x - a, y - b, z - c
-    x, y, z = a-x, b-y, c-z
+    x, y, z = a - x, b - y, c - z
     r = np.sqrt(x**2 + y**2 + z**2)
     u_z = 1/r * np.array([x, y, z])
     x_basis = np.array([1, 0, 0])
@@ -235,15 +235,16 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
 
 
 def powder_grounding():
+    num_waypoints = 100
     ref_traj, ref_force = recompute_trajectory(
         # R=0.0085,
         # h=0.004,
         R=0.008,
         h=0.005,
-        num_waypoints=100,
+        num_waypoints=num_waypoints,
     )
     # ref_traj += np.array([0, 0.5, 0.005, 0, 0, 0, 0])
-    # ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
+    ref_traj += np.array([0, 0, 0.002, 0, 0, 0, 0])
     print(ref_traj)
     print(ref_force)
 
@@ -251,7 +252,6 @@ def powder_grounding():
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
     arm.set_target_pose(
         pose=ref_traj[0, :] + np.array([0, 0, 0.002, 0, 0, 0, 0]),
-        # pose=ref_traj[0, :],
         target_time=3,
         wait=True,
     )
@@ -264,8 +264,8 @@ def powder_grounding():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    # selection_matrix = np.ones(6)
-    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = np.ones(6)
+    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -282,7 +282,7 @@ def powder_grounding():
 
     trajectory = p1
     trajectory = np.stack((p1, p2))
-    target_force = np.zeros(6)
+    # target_force = np.zeros(6)
     # target_force = np.ones(6)
 
     x_list = []
@@ -296,10 +296,13 @@ def powder_grounding():
     # center = [0.0, 0.5, 0.04]
     center = [0.0, 0.5, 0.05]
     # center = [0.0, 0.5, 0.081]
+    duration = 15
+    frequency = 500
 
     def f(x, w):
         global k
-        idx = k*100//(500*30)
+        idx = num_waypoints * k // (frequency * duration)
+        print(idx)
         print("pos_ref:", ref_traj[idx, :])
         print("pos_res:", x)
         x_list.append(x)
@@ -331,7 +334,6 @@ def powder_grounding():
         # w_ref_list.append(Adjoint_T @ ref_force[idx, :])
         w_ref_list.append(ref_force[idx, :])
         k = k+1
-        print(idx)
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
@@ -341,8 +343,8 @@ def powder_grounding():
         target_wrench=ref_force,
         # max_force_torque=[50., 50., 50., 5., 5., 5.],
         max_force_torque=[500., 500., 500., 50., 50., 50.],
-        duration=30,
-        # duration=15,
+        # duration=30,
+        duration=15,
         func=f,
         scale_up_error=True,
         max_scale_error=3.0,
@@ -356,25 +358,25 @@ def powder_grounding():
     x_list_np = np.array(x_list)
     w_list_np = np.array(w_list)
     w_ref_list_np = np.array(w_ref_list)
-    plt.figure()
+    fig_traj = plt.figure()
+    ax = fig_traj.add_subplot(111)
     plt.axis("equal")
-    plt.plot(ref_traj[:, 0], ref_traj[:, 1], ls="--")
-    plt.plot(x_list_np[:, 0], x_list_np[:, 1])
-    plt.xlabel("x [m]")
-    plt.ylabel("y [m]")
-    plt.legend(["pos_dis", "pos_res"])
+    ax.plot(ref_traj[:, 0], ref_traj[:, 1], ls="--")
+    ax.plot(x_list_np[:, 0], x_list_np[:, 1])
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("y [m]")
+    ax.legend(["pos_dis", "pos_res"])
 
-    plt.figure()
-    plt.plot(w_list_np[:, :3])
-    plt.plot(-w_ref_list_np[:, :3])
-    # plt.legend(["x", "y", "z", "rx", "ry", "rz"])
-    # plt.legend(["x", "y", "z"])
-    plt.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
-    plt.ylabel("Force [N]")
+    fig_w = plt.figure()
+    ax = fig_w.add_subplot(111)
+    ax.plot(w_list_np[:, :3])
+    ax.plot(-w_ref_list_np[:, :3])
+    ax.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
+    ax.set_ylabel("Force [N]")
 
     # plt.figure()
-    fig = plt.figure(figsize=(8, 8))
-    ax = fig.add_subplot(111, projection='3d')
+    fig_3d = plt.figure(figsize=(8, 8))
+    ax = fig_3d.add_subplot(111, projection='3d')
     ax.set_xlabel("x", size=14)
     ax.set_ylabel("y", size=14)
     ax.set_zlabel("z", size=14)
@@ -403,12 +405,15 @@ def powder_grounding():
     # ax.quiver(0.0, 0.0, 0.0, 1.0 / 20, 0.0, 0.0, color='r', label='X')
     # ax.quiver(0.0, 0.0, 0.0, 0.0, 1.0 / 20, 0.0, color='g', label='Y')
     # ax.quiver(0.0, 0.0, 0.0, 0.0, 0.0, 1.0 / 20, color='b', label='Z')
-    ax.quiver(center[0], center[1], center[2], 1.0 /
-              200, 0.0, 0.0, color='r', label='X')
-    ax.quiver(center[0], center[1], center[2], 0.0,
-              1.0 / 200, 0.0, color='g', label='Y')
-    ax.quiver(center[0], center[1], center[2], 0.0,
-              0.0, 1.0 / 200, color='b', label='Z')
+    ax.quiver(center[0], center[1], center[2],
+              1.0 / 200, 0.0, 0.0,
+              color='r', label='X')
+    ax.quiver(center[0], center[1], center[2],
+              0.0, 1.0 / 200, 0.0,
+              color='g', label='Y')
+    ax.quiver(center[0], center[1], center[2],
+              0.0, 0.0, 1.0 / 200,
+              color='b', label='Z')
 
     for j in range(len(w_list_np) // 100):
         i = j * 100
@@ -434,6 +439,9 @@ def powder_grounding():
         ax.quiver(x[i], y[i], z[i],
                   w_ref[0], w_ref[1], w_ref[2],
                   color="tab:blue", label="Z")
+        # ax.quiver(x_ref[i], y_ref[i], z_ref[i],
+        #           w_ref[0], w_ref[1], w_ref[2],
+        #           color="tab:blue", label="Z")
 
     # Make data
     X = np.arange(-0.04, 0.04, 0.001)
@@ -450,6 +458,16 @@ def powder_grounding():
         antialiased=False,
         alpha=0.25,
     )
+    ax.set_xlim(-0.05, 0.05)
+    ax.set_ylim(0.45, 0.55)
+    ax.set_zlim(0.00, 0.10)
+
+    import os
+    os.makedirs("./plot", exist_ok=True)
+    os.makedirs("./plot/test1", exist_ok=True)
+    fig_traj.savefig("./plot/test1/traj.png")
+    fig_w.savefig("./plot/test1/wrench.png")
+    fig_3d.savefig("./plot/test1/3d_plot.png")
 
     plt.show()
 
