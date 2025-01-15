@@ -66,42 +66,71 @@ def move_cartesian():
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
     selection_matrix = np.ones(6)
+    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    # p_gains = [0.5, 0.5, 0.5, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
+    theta = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
+
     ee = arm.end_effector()
+    print("EE", ee)
 
-    p1 = ee.copy()
-    p1[2] -= 0.03
+    # p1 = ee.copy()
+    # p1[2] -= 0.03
 
-    p2 = p1.copy()
-    p2[2] += 0.005
+    # p2 = p1.copy()
+    # p2[2] += 0.005
 
-    trajectory = p1
+    # trajectory = p1
     # trajectory = np.stack((p1, p2))
-    target_force = np.zeros(6)
+    steps = 100
+    x = np.linspace(-0.1, 0.1, steps)
+    y = 0.3 * np.ones(steps)
+    # z = 0.08 * np.ones(steps)
+    z = 0.0 * np.ones(steps)
+    # trajectory_quat = np.array([0, 0, 0, 1]) * np.ones((100, 4))
+    trajectory_quat = ee[3:] * np.ones((100, 4))
+    trajectory_pos = np.stack((x, y, z)).T
+    ref_traj = np.zeros((steps, 7))
+    ref_traj[:, :3] = trajectory_pos
+    ref_traj[:, 3:] = trajectory_quat
 
-    def f(x):
+    # target_force = np.zeros(6) * np.ones((steps, 6))
+    target_force = np.array([0, 0, -10, 0, 0, 0]) * np.ones((steps, 6))
+
+    arm.set_target_pose(
+        pose=ref_traj[0, :] + np.array([0, 0, 0.01, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :],
+        target_time=3,
+        wait=True,
+    )
+
+    def f(x, w):
         rospy.loginfo_throttle(0.25, f"x: {x[:3]}")
-        rospy.loginfo_throttle(
-            0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
+        rospy.loginfo_throttle(0.25, f"w: {w[:3]}")
+        # rospy.loginfo_throttle(
+        #     0.25, f"error: {np.round(trajectory[:3] - x[:3], 4)}")
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
-        trajectory,
+        # trajectory,
+        ref_traj,
         target_wrench=target_force,
-        max_force_torque=[50., 50., 50., 5., 5., 5.],
-        duration=30,
+        # max_force_torque=[50., 50., 50., 5., 5., 5.],
+        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        duration=15,
         func=f,
         scale_up_error=True,
         max_scale_error=3.0,
         auto_stop=False,
     )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
-    print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    # print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
 
 
 def recompute_trajectory(R, h, num_waypoints):
@@ -143,10 +172,10 @@ def recompute_trajectory(R, h, num_waypoints):
         return quat, R
 
     # make sure it's still inside the mortar as height
-    h = np.clip(h, 0.01, 0.04)
+    h = np.clip(h, 0.01, 0.05)
     # table_height = 0.8
     table_height = 0.0
-    initial_pose = [0.0, R, table_height+h, 0.0, 0.9990052, 0.04459406, 0.0]
+    # initial_pose = [0.0, R, table_height+h, 0.0, 0.9990052, 0.04459406, 0.0]
 
     # ref_traj = traj_utils.compute_trajectory(
     #     initial_pose,
@@ -172,13 +201,19 @@ def recompute_trajectory(R, h, num_waypoints):
     ind = 0
 
     # recalculate orientation in every point to be perpendicular to surface;
+    center = [0.0, 0.0, 0.05]
     ref_traj = np.zeros((steps, 7))
     for point in ref_traj_pos:
         # point to evaluate in
-        px, py = point[0], point[1]
+        # px, py = point[0], point[1]
 
-        # calculate the normal and tangents vectors to the surface of the mortar
-        n = np.array([fx(px, py), fy(px, py), -1])
+        # # calculate the normal and tangents vectors to the surface of the mortar
+        # n = np.array([fx(px, py), fy(px, py), -1])
+        n = np.array([
+            point[0] - center[0],
+            point[1] - center[1],
+            point[2] - center[2],
+        ])
         normal_vect_direction = n/np.linalg.norm(n)
 
         try:
@@ -191,10 +226,16 @@ def recompute_trajectory(R, h, num_waypoints):
 
         ref_traj[ind, :3] = ref_traj_pos[ind]
         ref_traj[ind, 3:] = quat_ref
+        # R = R_base2surface(pos=ref_traj_pos[ind], center=center)
+        # from scipy.spatial.transform import Rotation
+        # quat_ref = Rotation.from_matrix(R).as_quat()
+        # ref_traj[ind, 3:] = quat_ref
+
         ind += 1
 
     # offset the trajectory to be above the surface
-    ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
+    ref_traj += np.array([0, 0.5, 0, 0, 0, 0, 0])
 
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
@@ -236,23 +277,26 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
 
 def powder_grounding():
     num_waypoints = 100
+    h = 0.02
+    R = np.sqrt(0.04**2 - (0.05 - h)**2)
+    print(R)
     ref_traj, ref_force = recompute_trajectory(
         # R=0.0085,
         # h=0.004,
-        R=0.008,
-        h=0.005,
+        # R=0.008,
+        # h=0.005,
+        R=R,
+        h=h,
         num_waypoints=num_waypoints,
     )
-    # ref_traj += np.array([0, 0.5, 0.005, 0, 0, 0, 0])
-    ref_traj += np.array([0, 0, 0.1, 0, 0, 0, 0])
-    # ref_traj += np.array([0, 0, 0.0, 0, 0, 0, 0])
+    # ref_traj += np.array([0, 0, 0.025, 0, 0, 0, 0])
     print(ref_traj)
     print(ref_force)
 
     theta = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=theta, target_time=3, wait=True)
     arm.set_target_pose(
-        # pose=ref_traj[0, :] + np.array([0, 0, 0.002, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :] + np.array([0, 0, 0.001, 0, 0, 0, 0]),
         pose=ref_traj[0, :],
         target_time=3,
         wait=True,
