@@ -65,8 +65,9 @@ def move_cartesian():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    selection_matrix = np.ones(6)
+    # selection_matrix = np.ones(6)
     # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = [1, 1, 1, 0, 0, 0]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -89,19 +90,20 @@ def move_cartesian():
     # trajectory = p1
     # trajectory = np.stack((p1, p2))
     steps = 100
-    x = np.linspace(-0.1, 0.1, steps)
-    y = 0.3 * np.ones(steps)
+    # x = np.linspace(-0.1, 0.1, steps)
+    # y = 0.3 * np.ones(steps)
     # z = 0.08 * np.ones(steps)
-    z = 0.0 * np.ones(steps)
-    # trajectory_quat = np.array([0, 0, 0, 1]) * np.ones((100, 4))
+    x = -0.17 * np.ones(steps)
+    y = 0.51 * np.ones(steps)
+    z = 0.0755 * np.ones(steps)
     trajectory_quat = ee[3:] * np.ones((100, 4))
     trajectory_pos = np.stack((x, y, z)).T
     ref_traj = np.zeros((steps, 7))
     ref_traj[:, :3] = trajectory_pos
     ref_traj[:, 3:] = trajectory_quat
 
-    # target_force = np.zeros(6) * np.ones((steps, 6))
-    target_force = np.array([0, 0, -10, 0, 0, 0]) * np.ones((steps, 6))
+    target_force = np.zeros(6) * np.ones((steps, 6))
+    # target_force = np.array([0, 0, -10, 0, 0, 0]) * np.ones((steps, 6))
 
     arm.set_target_pose(
         pose=ref_traj[0, :] + np.array([0, 0, 0.01, 0, 0, 0, 0]),
@@ -121,8 +123,8 @@ def move_cartesian():
         # trajectory,
         ref_traj,
         target_wrench=target_force,
-        # max_force_torque=[50., 50., 50., 5., 5., 5.],
-        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        # max_force_torque=[500., 500., 500., 50., 50., 50.],
         duration=15,
         func=f,
         scale_up_error=True,
@@ -131,17 +133,18 @@ def move_cartesian():
     )
     print("EE total displacement", np.round(ee - arm.end_effector(), 4))
     # print("Pose error", np.round(trajectory[:3] - arm.end_effector()[:3], 4))
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
 
 
 def recompute_trajectory(R, h, num_waypoints):
     # Compute reference trajectory and reference force profile
 
     # mortar surface function and derivatives
-    def fx(x, y): return 4*x**3 * 11445.39 + \
-        y**2 * 2*x * 22890.7 + 2*x * 3.11558
+    # def fx(x, y): return 4*x**3 * 11445.39 + \
+    #     y**2 * 2*x * 22890.7 + 2*x * 3.11558
 
-    def fy(x, y): return 4*y**3 * 11445.39 + \
-        2*y * x**2 * 22890.7 + 2*y * 3.11558
+    # def fy(x, y): return 4*y**3 * 11445.39 + \
+    #     2*y * x**2 * 22890.7 + 2*y * 3.11558
 
     def get_orientation_quaternion_smooth(n, prev_quat=None, prev_R=None):
         if prev_R is None:
@@ -201,7 +204,9 @@ def recompute_trajectory(R, h, num_waypoints):
     ind = 0
 
     # recalculate orientation in every point to be perpendicular to surface;
-    center = [0.0, 0.0, 0.05]
+    # center = [0.0, 0.0, 0.05]
+    # center = [-0.17, 0.51, 0.0755]
+    center = [0.0, 0.0, 0.0755]
     ref_traj = np.zeros((steps, 7))
     for point in ref_traj_pos:
         # point to evaluate in
@@ -212,6 +217,8 @@ def recompute_trajectory(R, h, num_waypoints):
         n = np.array([
             point[0] - center[0],
             point[1] - center[1],
+            # point[0],
+            # point[1],
             point[2] - center[2],
         ])
         normal_vect_direction = n/np.linalg.norm(n)
@@ -235,15 +242,16 @@ def recompute_trajectory(R, h, num_waypoints):
 
     # offset the trajectory to be above the surface
     # ref_traj += np.array([0, 0.5, 0.006, 0, 0, 0, 0])
-    ref_traj += np.array([0, 0.5, 0, 0, 0, 0, 0])
+    # ref_traj += np.array([-0.17, 0.51, 0, 0, 0, 0, 0])
 
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 0, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 1.0, 0, 0, 0]]*num_waypoints)
-    ref_force = np.array([[0, 0, -10.0, 0, 0, 0]]*num_waypoints)
+    # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
+    ref_force = np.array([[0, 0, -10.0, 0, 0, 0]] * num_waypoints)
 
-    center = [0.0, 0.5, 0.05]
+    # center = [0.0, 0.5, 0.05]
+    # center = np.array([-0.17, 0.51, 0.0755])
+    # center = [-0.17, 0.51, 0.0755]
     for i in range(num_waypoints):
         R = R_base2surface(pos=ref_traj[i, :3], center=center)
         print(R)
@@ -275,29 +283,35 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
     return R
 
 
-def powder_grounding():
-    num_waypoints = 100
-    h = 0.02
-    R = np.sqrt(0.04**2 - (0.05 - h)**2)
-    print(R)
+def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
+    num_waypoints = 1000
+    # h = 0.013
+    h = 0.0355 + 0.002
+    R = np.sqrt(0.04**2 - (center[2] - h)**2)
+    print("R:", R)
     ref_traj, ref_force = recompute_trajectory(
-        # R=0.0085,
-        # h=0.004,
-        # R=0.008,
-        # h=0.005,
         R=R,
         h=h,
         num_waypoints=num_waypoints,
     )
-    # ref_traj += np.array([0, 0, 0.025, 0, 0, 0, 0])
+    # z_offset = 0.1
+    # z_offset = 0.03
+    z_offset = 0.001
+    ref_traj += np.array([center[0], center[1], z_offset, 0, 0, 0, 0])
     print(ref_traj)
     print(ref_force)
 
     theta = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
     arm.set_joint_positions(positions=theta, target_time=3, wait=True)
+    ee = arm.end_effector()
     arm.set_target_pose(
-        # pose=ref_traj[0, :] + np.array([0, 0, 0.001, 0, 0, 0, 0]),
-        pose=ref_traj[0, :],
+        pose=np.concatenate([np.array([center[0], center[1], ref_traj[0, 2] + 0.05]), ee[3:]]),
+        target_time=3,
+        wait=True,
+    )
+    arm.set_target_pose(
+        pose=ref_traj[0, :] + np.array([0, 0, 0.001, 0, 0, 0, 0]),
+        # pose=ref_traj[0, :],
         target_time=3,
         wait=True,
     )
@@ -310,8 +324,8 @@ def powder_grounding():
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    selection_matrix = np.ones(6)
-    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    # selection_matrix = np.ones(6)
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -319,8 +333,6 @@ def powder_grounding():
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
     # d_gains = [0, 0, 0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
-
-    ee = arm.end_effector()
 
     p1 = ee.copy()
     p1[2] -= 0.03
@@ -337,49 +349,18 @@ def powder_grounding():
     w_list = []
     w_ref_list = []
     R_list = []
-    # k = 0
     global k
     k = 0
-
-    # center = [0.0, 0.5, 0.04]
-    center = [0.0, 0.5, 0.05]
-    # center = [0.0, 0.5, 0.081]
     duration = 15
     frequency = 500
 
     def f(x, w):
         global k
         idx = num_waypoints * k // (frequency * duration)
-        # print(idx)
-        # print("pos_ref:", ref_traj[idx, :])
-        # print("pos_res:", x)
         x_list.append(x)
         w_list.append(w)
-        # rospy.loginfo_throttle(0.25, f"x: {x[:]}")
-        # rospy.loginfo_throttle(0.25, f"w: {w[:]}")
-        # rospy.loginfo_throttle(
-        #     0.25, f"error: {np.round(trajectory[:] - x[:], 4)}")
-        # R = R_base2surface(pos=x[:3], center=center)
         R = R_base2surface(pos=ref_traj[idx, :3], center=center)
-        # print("R_det:", np.linalg.det(R))
         R_list.append(R)
-        # print(R)
-        # x, y, z = x[0], x[1], x[2]
-        # print(x, y, z)
-        # px = np.array([
-        #     [0, -z,  y],
-        #     [z,  0, -x],
-        #     [-y, x,  0],
-        # ])
-        # Adjoint_T = np.block([  # transformation matrix from base to surface
-        #     # [R, px @ R],
-        #     # [np.zeros((3, 3)), R],
-        #     # [R, np.zeros((3, 3))],
-        #     # [px @ R, R],
-        #     [R, np.zeros((3, 3))],
-        #     [np.zeros((3, 3)), R],
-        # ])
-        # w_ref_list.append(Adjoint_T @ ref_force[idx, :])
         w_ref_list.append(ref_force[idx, :])
         k = k+1
 
@@ -389,10 +370,10 @@ def powder_grounding():
         # target_wrench=target_force,
         ref_traj,
         target_wrench=ref_force,
-        # max_force_torque=[50., 50., 50., 5., 5., 5.],
-        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        # max_force_torque=[500., 500., 500., 50., 50., 50.],
         # duration=30,
-        duration=15,
+        duration=duration,
         func=f,
         scale_up_error=True,
         max_scale_error=3.0,
@@ -402,6 +383,10 @@ def powder_grounding():
     print("Pose error", np.round(
         trajectory[:, :3] - arm.end_effector()[:3], 4))
 
+    # move to home position
+    arm.set_joint_positions(positions=theta, target_time=3, wait=True)
+
+    # visualization
     import matplotlib.pyplot as plt
     x_list_np = np.array(x_list)
     w_list_np = np.array(w_list)
@@ -438,21 +423,7 @@ def powder_grounding():
     ax.plot(x_ref, y_ref, z_ref, color='tab:blue', marker='.', linestyle='--')
     ax.scatter(center[0], center[1], center[2], color='tab:red', marker='o')
 
-    # lim_range_x = np.max(x) - 0
-    # lim_range_y = np.max(y) - np.min(y)
-    # lim_range_z = np.max(z) - np.min(z)
-    # lim_range = np.max([lim_range_x, lim_range_y, lim_range_z])
-    # ax.set_xlim(0, lim_range)
-    # ax.set_ylim(-lim_range / 2, lim_range / 2)
-    # lim_range = 1.0
-    # ax.set_xlim(-lim_range / 2, lim_range / 2)
-    # ax.set_ylim(0, lim_range)
-    # ax.set_zlim(0, lim_range)
-
     # origin
-    # ax.quiver(0.0, 0.0, 0.0, 1.0 / 20, 0.0, 0.0, color='r', label='X')
-    # ax.quiver(0.0, 0.0, 0.0, 0.0, 1.0 / 20, 0.0, color='g', label='Y')
-    # ax.quiver(0.0, 0.0, 0.0, 0.0, 0.0, 1.0 / 20, color='b', label='Z')
     ax.quiver(center[0], center[1], center[2],
               1.0 / 200, 0.0, 0.0,
               color='r', label='X')
@@ -475,10 +446,6 @@ def powder_grounding():
         rot_vec_y /= 200
         rot_vec_z /= 200
 
-        # ax.quiver(x[i], y[i], z[i], rot_vec_x[0], rot_vec_x[1], rot_vec_x[2], color="r", label="X")
-        # ax.quiver(x[i], y[i], z[i], rot_vec_y[0], rot_vec_y[1], rot_vec_y[2], color="g", label="Y")
-        # ax.quiver(x[i], y[i], z[i], rot_vec_z[0], rot_vec_z[1], rot_vec_z[2], color="b", label="Z")
-
         w_res = w_list_np[i] / 2000
         w_ref = w_ref_list_np[i] / 2000
         ax.quiver(x[i], y[i], z[i],
@@ -487,15 +454,15 @@ def powder_grounding():
         ax.quiver(x[i], y[i], z[i],
                   w_ref[0], w_ref[1], w_ref[2],
                   color="tab:blue", label="Z")
-        # ax.quiver(x_ref[i], y_ref[i], z_ref[i],
-        #           w_ref[0], w_ref[1], w_ref[2],
-        #           color="tab:blue", label="Z")
 
     # Make data
-    X = np.arange(-0.04, 0.04, 0.001)
-    Y = np.arange(0.5 - 0.04, 0.5 + 0.04, 0.001)
+    X = np.arange(center[0] - 0.04, center[0] + 0.04, 0.001)
+    Y = np.arange(center[1] - 0.04, center[1] + 0.04, 0.001)
     X, Y = np.meshgrid(X, Y)
-    Z = -np.sqrt(-X**2 + -(Y-0.5)**2 + 0.04**2) + 0.05
+    Z = -np.sqrt(-(X - center[0])**2 + -(Y - center[1])**2 + 0.04**2) + center[2]
+    # X = X + center[0]
+    # Y = Y + center[1]
+    # Z = Z + center[2]
 
     # Plot the surface
     from matplotlib import cm
@@ -506,9 +473,10 @@ def powder_grounding():
         antialiased=False,
         alpha=0.25,
     )
-    ax.set_xlim(-0.05, 0.05)
-    ax.set_ylim(0.45, 0.55)
-    ax.set_zlim(0.00, 0.10)
+    lim = 0.05
+    ax.set_xlim(center[0] - lim, center[0] + lim)
+    ax.set_ylim(center[1] - lim, center[1] + lim)
+    ax.set_zlim(center[2] - lim, center[2] + lim)
 
     import os
     os.makedirs("./plot", exist_ok=True)
