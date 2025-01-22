@@ -249,17 +249,14 @@ def recompute_trajectory(R, h, num_waypoints):
     # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
     ref_force = np.array([[0, 0, -10.0, 0, 0, 0]] * num_waypoints)
 
-    # center = [0.0, 0.5, 0.05]
-    # center = np.array([-0.17, 0.51, 0.0755])
-    # center = [-0.17, 0.51, 0.0755]
-    for i in range(num_waypoints):
-        R = R_base2surface(pos=ref_traj[i, :3], center=center)
-        print(R)
-        Adjoint_T = np.block([
-            [R, np.zeros((3, 3))],
-            [np.zeros((3, 3)), R],
-        ])
-        ref_force[i, :] = Adjoint_T @ ref_force[i, :]
+    # for i in range(num_waypoints):
+    #     R = R_base2surface(pos=ref_traj[i, :3], center=center)
+    #     print(R)
+    #     Adjoint_T = np.block([
+    #         [R, np.zeros((3, 3))],
+    #         [np.zeros((3, 3)), R],
+    #     ])
+    #     ref_force[i, :] = Adjoint_T @ ref_force[i, :]
 
     return ref_traj, ref_force
 
