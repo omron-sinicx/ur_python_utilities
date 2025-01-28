@@ -246,17 +246,17 @@ def recompute_trajectory(R, h, num_waypoints):
 
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
-    ref_force = np.array([[0, 0, -10.0, 0, 0, 0]] * num_waypoints)
+    ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
+    # ref_force = np.array([[0, 0, -20.0, 0, 0, 0]] * num_waypoints)
 
-    for i in range(num_waypoints):
-        R = R_base2surface(pos=ref_traj[i, :3], center=center)
-        print(R)
-        Adjoint_T = np.block([
-            [R, np.zeros((3, 3))],
-            [np.zeros((3, 3)), R],
-        ])
-        ref_force[i, :] = Adjoint_T @ ref_force[i, :]
+    # for i in range(num_waypoints):
+    #     R = R_base2surface(pos=ref_traj[i, :3], center=center)
+    #     print(R)
+    #     Adjoint_T = np.block([
+    #         [R, np.zeros((3, 3))],
+    #         [np.zeros((3, 3)), R],
+    #     ])
+    #     ref_force[i, :] = Adjoint_T @ ref_force[i, :]
 
     return ref_traj, ref_force
 
@@ -281,7 +281,9 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
 
 
 def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
-    num_waypoints = 1000
+    duration = 10
+    frequency = 500
+    num_waypoints = duration * frequency // 10
     # h = 0.013
     h = 0.0355 + 0.002
     R = np.sqrt(0.04**2 - (center[2] - h)**2)
@@ -319,6 +321,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     arm.set_control_mode(mode="parallel")
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
+    # arm.update_stiffness([3000, 3000, 3000, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
     # selection_matrix = np.ones(6)
@@ -347,13 +350,14 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     w_list = []
     w_ref_list = []
     R_list = []
+    time_list = []
     global k
     k = 0
-    duration = 15
-    frequency = 500
 
     def f(x, w):
         global k
+        # time_list.append(1/500*k)
+        time_list.append(rospy.get_time())
         idx = num_waypoints * k // (frequency * duration)
         x_list.append(x)
         w_list.append(w)
@@ -369,8 +373,9 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         # target_wrench=target_force,
         ref_traj,
         target_wrench=ref_force,
-        max_force_torque=[50., 50., 50., 5., 5., 5.],
-        # max_force_torque=[500., 500., 500., 50., 50., 50.],
+        # max_force_torque=[50., 50., 50., 5., 5., 5.],
+        # max_force_torque=[100., 100., 100., 5., 5., 5.],
+        max_force_torque=[500., 500., 500., 50., 50., 50.],
         # duration=30,
         duration=duration,
         func=f,
@@ -490,16 +495,19 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # repeat_num = math.ceil(x_list_np.shape[0] / ref_traj.shape[0])
     # print("repeat_num:", repeat_num)
     # print(ref_traj.repeat(repeat_num, axis=0).shape)
+    time_np = np.array(time_list)
+    time_np = time_np.reshape((time_np.shape[0], 1))
+    print(time_np.shape)
     print(x_list_np.shape)
     print(x_ref_list_np.shape)
     print(w_list_np.shape)
     print(w_ref_list_np.shape)
-    time = np.arange(0, duration, duration / x_list_np.shape[0])
-    time.reshape((time.shape[0], 1))
-    print(time.shape)
+    # time = np.arange(0, duration, duration / x_list_np.shape[0])
+    # time = time.reshape((time.shape[0], 1))
+
     rows = np.concatenate(
         [
-            # time,
+            time_np,
             x_list_np,
             x_ref_list_np,
             w_list_np,
@@ -512,7 +520,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     with open("./plot/test1/trajectory.csv", "w") as f:
         writer = csv.writer(f)
         writer.writerow(
-            # ["time"] +
+            ["time"] +
             [f"x[{i}]" for i in range(7)] + 
             [f"x_ref[{i}]" for i in range(7)] + 
             [f"w[{i}]" for i in range(6)] + 
