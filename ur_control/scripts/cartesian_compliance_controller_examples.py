@@ -66,8 +66,8 @@ def move_cartesian():
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
     # selection_matrix = np.ones(6)
-    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
-    selection_matrix = [1, 1, 1, 0, 0, 0]  # x, y, z, rx, ry, rz
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    # selection_matrix = [1, 1, 1, 0, 0, 0]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
@@ -249,14 +249,14 @@ def recompute_trajectory(R, h, num_waypoints):
     # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
     ref_force = np.array([[0, 0, -10.0, 0, 0, 0]] * num_waypoints)
 
-    # for i in range(num_waypoints):
-    #     R = R_base2surface(pos=ref_traj[i, :3], center=center)
-    #     print(R)
-    #     Adjoint_T = np.block([
-    #         [R, np.zeros((3, 3))],
-    #         [np.zeros((3, 3)), R],
-    #     ])
-    #     ref_force[i, :] = Adjoint_T @ ref_force[i, :]
+    for i in range(num_waypoints):
+        R = R_base2surface(pos=ref_traj[i, :3], center=center)
+        print(R)
+        Adjoint_T = np.block([
+            [R, np.zeros((3, 3))],
+            [np.zeros((3, 3)), R],
+        ])
+        ref_force[i, :] = Adjoint_T @ ref_force[i, :]
 
     return ref_traj, ref_force
 
@@ -285,7 +285,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # h = 0.013
     h = 0.0355 + 0.002
     R = np.sqrt(0.04**2 - (center[2] - h)**2)
-    print("R:", R)
+    # print("R:", R)
     ref_traj, ref_force = recompute_trajectory(
         R=R,
         h=h,
@@ -343,6 +343,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # target_force = np.ones(6)
 
     x_list = []
+    x_ref_list = []
     w_list = []
     w_ref_list = []
     R_list = []
@@ -358,6 +359,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         w_list.append(w)
         R = R_base2surface(pos=ref_traj[idx, :3], center=center)
         R_list.append(R)
+        x_ref_list.append(ref_traj[idx, :])
         w_ref_list.append(ref_force[idx, :])
         k = k+1
 
@@ -386,8 +388,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # visualization
     import matplotlib.pyplot as plt
     x_list_np = np.array(x_list)
-    w_list_np = np.array(w_list)
-    w_ref_list_np = np.array(w_ref_list)
+    x_ref_list_np = np.array(x_ref_list)
     fig_traj = plt.figure()
     ax = fig_traj.add_subplot(111)
     plt.axis("equal")
@@ -397,6 +398,8 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     ax.set_ylabel("y [m]")
     ax.legend(["pos_dis", "pos_res"])
 
+    w_list_np = np.array(w_list)
+    w_ref_list_np = np.array(w_ref_list)
     fig_w = plt.figure()
     ax = fig_w.add_subplot(111)
     ax.plot(w_list_np[:, :3])
@@ -481,6 +484,41 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     fig_traj.savefig("./plot/test1/traj.png")
     fig_w.savefig("./plot/test1/wrench.png")
     fig_3d.savefig("./plot/test1/3d_plot.png")
+
+    # save csv
+    # import math
+    # repeat_num = math.ceil(x_list_np.shape[0] / ref_traj.shape[0])
+    # print("repeat_num:", repeat_num)
+    # print(ref_traj.repeat(repeat_num, axis=0).shape)
+    print(x_list_np.shape)
+    print(x_ref_list_np.shape)
+    print(w_list_np.shape)
+    print(w_ref_list_np.shape)
+    time = np.arange(0, duration, duration / x_list_np.shape[0])
+    time.reshape((time.shape[0], 1))
+    print(time.shape)
+    rows = np.concatenate(
+        [
+            # time,
+            x_list_np,
+            x_ref_list_np,
+            w_list_np,
+            w_ref_list_np,
+        ],
+        axis=1,
+    )
+    print(rows)
+    import csv
+    with open("./plot/test1/trajectory.csv", "w") as f:
+        writer = csv.writer(f)
+        writer.writerow(
+            # ["time"] +
+            [f"x[{i}]" for i in range(7)] + 
+            [f"x_ref[{i}]" for i in range(7)] + 
+            [f"w[{i}]" for i in range(6)] + 
+            [f"w_ref[{i}]" for i in range(6)]
+        )
+        writer.writerows(rows)
 
     plt.show()
 
