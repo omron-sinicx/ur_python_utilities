@@ -246,17 +246,17 @@ def recompute_trajectory(R, h, num_waypoints):
 
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
-    ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
-    # ref_force = np.array([[0, 0, -20.0, 0, 0, 0]] * num_waypoints)
+    # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
+    ref_force = np.array([[0, 0, -5.0, 0, 0, 0]] * num_waypoints)
 
-    # for i in range(num_waypoints):
-    #     R = R_base2surface(pos=ref_traj[i, :3], center=center)
-    #     print(R)
-    #     Adjoint_T = np.block([
-    #         [R, np.zeros((3, 3))],
-    #         [np.zeros((3, 3)), R],
-    #     ])
-    #     ref_force[i, :] = Adjoint_T @ ref_force[i, :]
+    for i in range(num_waypoints):
+        R = R_base2surface(pos=ref_traj[i, :3], center=center)
+        print(R)
+        Adjoint_T = np.block([
+            [R, np.zeros((3, 3))],
+            [np.zeros((3, 3)), R],
+        ])
+        ref_force[i, :] = Adjoint_T @ ref_force[i, :]
 
     return ref_traj, ref_force
 
@@ -281,11 +281,12 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
 
 
 def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
-    duration = 10
+    duration = 15
     frequency = 500
     num_waypoints = duration * frequency // 10
     # h = 0.013
-    h = 0.0355 + 0.002
+    h = 0.0355 + 0.002 # offset from table surface to bowl inner center
+    # h = 0.0355 + 0.005
     R = np.sqrt(0.04**2 - (center[2] - h)**2)
     # print("R:", R)
     ref_traj, ref_force = recompute_trajectory(
@@ -328,7 +329,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
-    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    p_gains = [0.03, 0.03, 0.03, 1.5, 1.5, 1.5]
     # p_gains = [0.005, 0.005, 0.005, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
     # d_gains = [0, 0, 0, 0, 0, 0]
@@ -367,15 +368,26 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         w_ref_list.append(ref_force[idx, :])
         k = k+1
 
+    # arm.zero_ft_sensor()
+    # res = arm.execute_compliance_control(
+    #     ref_traj[:1],
+    #     target_wrench=ref_force[:1],
+    #     max_force_torque=[50., 50., 50., 5., 5., 5.],
+    #     duration=10,
+    #     func=f,
+    #     scale_up_error=True,
+    #     max_scale_error=3.0,
+    #     auto_stop=False,
+    # )
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
         # trajectory,
         # target_wrench=target_force,
         ref_traj,
         target_wrench=ref_force,
-        # max_force_torque=[50., 50., 50., 5., 5., 5.],
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
         # max_force_torque=[100., 100., 100., 5., 5., 5.],
-        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        # max_force_torque=[500., 500., 500., 50., 50., 50.],
         # duration=30,
         duration=duration,
         func=f,
@@ -521,9 +533,9 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         writer = csv.writer(f)
         writer.writerow(
             ["time"] +
-            [f"x[{i}]" for i in range(7)] + 
-            [f"x_ref[{i}]" for i in range(7)] + 
-            [f"w[{i}]" for i in range(6)] + 
+            [f"x[{i}]" for i in range(7)] +
+            [f"x_ref[{i}]" for i in range(7)] +
+            [f"w[{i}]" for i in range(6)] +
             [f"w_ref[{i}]" for i in range(6)]
         )
         writer.writerows(rows)
