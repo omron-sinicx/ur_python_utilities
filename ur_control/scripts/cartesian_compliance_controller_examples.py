@@ -345,27 +345,17 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # target_force = np.zeros(6)
     # target_force = np.ones(6)
 
-    x_list = []
-    x_ref_list = []
-    w_list = []
-    w_ref_list = []
-    R_list = []
-    time_list = []
-    global k
-    k = 0
+    x_list, x_ref_list, w_list, w_ref_list, R_list, time_list = [], [], [], [], [], []
 
-    def f(x, w):
-        global k
-        # time_list.append(1/500*k)
+    def f(x, w, tp, tf):
+        # current pose, current wrench, target pose, target force
         time_list.append(rospy.get_time())
-        idx = num_waypoints * k // (frequency * duration)
         x_list.append(x)
         w_list.append(w)
-        R = R_base2surface(pos=ref_traj[idx, :3], center=center)
+        R = R_base2surface(pos=tp[:3], center=center)
         R_list.append(R)
-        x_ref_list.append(ref_traj[idx, :])
-        w_ref_list.append(ref_force[idx, :])
-        k = k+1
+        x_ref_list.append(tp)
+        w_ref_list.append(tf)
 
     # arm.zero_ft_sensor()
     # res = arm.execute_compliance_control(
@@ -423,7 +413,10 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     fig_w = plt.figure()
     ax = fig_w.add_subplot(111)
     ax.plot(w_list_np[:, :3])
-    ax.plot(-w_ref_list_np[:, :3])
+    ax.plot(-w_ref_list_np[:, :3], ls="--")
+    colors = ["C0","C1","C2","C0","C1","C2"]
+    for i,j in enumerate(ax.lines):
+        j.set_color(colors[i])
     ax.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
     ax.set_ylabel("Force [N]")
 
@@ -549,7 +542,7 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
 def powder_grinding_ioana():
 
     # Real robot
-    mortar_position = np.array([-0.17, 0.51, 0.0755])
+    mortar_position = np.array([-0.16484, 0.50799, 0.03673])
     fix_motion_duration = 3
 
     # Simulation (Gazebo)
@@ -561,28 +554,29 @@ def powder_grinding_ioana():
     num_waypoints = duration * frequency // 10
     mortar_diameter = 0.08
     desired_height = 0.01
-    fraction = 0.5
+    fraction = 0.75
     initial_orientation = [0.707,  -0.707, 0.0,  0.0]
 
     reference_trajectory = traj_utils.generate_mortar_trajectory(mortar_diameter, desired_height, num_waypoints, initial_orientation, fraction)
     # start trajectory at the center of the mortar
     reference_trajectory[:, :3] += mortar_position
 
-    # reference_trajectory[:, 2] += 0.025  # offset height if necessary
+    reference_trajectory[:, 2] += 0.00  # offset height if necessary
 
     reference_force = [[0, 0, -5, 0, 0, 0]] * num_waypoints
 
     # move to home position
-    home_config = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    home_config = [1.6363, -1.4535, 1.8073, -1.9241, -1.5649, -0.0005]
     arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
 
     # controller config
     arm.set_position_control_mode(True)
     arm.set_control_mode(mode="parallel")
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
-    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
-    p_gains = [0.03, 0.03, 0.03, 1.5, 1.5, 1.5]
-    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    arm.update_stiffness([3000, 3000, 3000, 100, 100, 100])
+    p_gains = [0.01, 0.01, 0.01, 1.5, 1.5, 1.5]
+    # d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
     selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
@@ -620,8 +614,8 @@ def powder_grinding_ioana():
     arm.execute_compliance_control(
         reference_trajectory,
         target_wrench=reference_force,
-        # max_force_torque=[50., 50., 50., 5., 5., 5.],
-        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        max_force_torque=[50., 50., 50., 5., 5., 5.],
+        # max_force_torque=[500., 500., 500., 50., 50., 50.], # for Gazebo sim
         duration=duration,
         scale_up_error=True,
         max_scale_error=3.0,
@@ -842,7 +836,8 @@ def main():
 
                               gripper_type=None)
 
-    arm.dashboard_services.activate_ros_control_on_ur()
+    if not arm.dashboard_services.activate_ros_control_on_ur():
+        exit(0)
 
     if args.move_joints:
         move_joints()
