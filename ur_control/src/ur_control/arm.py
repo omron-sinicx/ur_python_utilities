@@ -163,7 +163,7 @@ class Arm(object):
                 raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
         elif self.ik_solver == IKSolverType.TRAC_IK:
             try:
-                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, solve_type="Distance")
+                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.005, epsilon=1e-5, solve_type="Distance")
             except Exception as e:
                 rospy.logerr("Could not instantiate TRAC_IK" + str(e))
         elif self.ik_solver == IKSolverType.KDL:
@@ -577,7 +577,7 @@ class Arm(object):
         Returns
         -------
         res : bool or str
-            True if the trajectory is succesfully executed.
+            True if the trajectory is successfully executed.
             If the IK solver fails, return "ik_not_found"
         """
         new_pose = transformations.transform_pose(self.end_effector(), transformation, rotated_frame=relative_to_tcp)
