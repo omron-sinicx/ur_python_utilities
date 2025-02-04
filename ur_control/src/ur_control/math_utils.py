@@ -188,7 +188,7 @@ def quaternion_slerp(quat0, quat1, fraction):  # TODO
     """
     q0 = to_np_quaternion(quat0)
     q1 = to_np_quaternion(quat1)
-    return to_np_array(quaternion.slerp(q0, q1, 0.0, 1.0, fraction))
+    return to_np_array(quaternion.slerp(q0, q1, 0.0, 1.0, fraction).normalized())
 
 
 def quaternion_rotate_vector(quat, vector):
