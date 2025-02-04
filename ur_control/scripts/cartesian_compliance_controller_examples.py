@@ -285,7 +285,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     frequency = 500
     num_waypoints = duration * frequency // 10
     # h = 0.013
-    h = 0.0355 + 0.002 # offset from table surface to bowl inner center
+    h = 0.0355 + 0.002  # offset from table surface to bowl inner center
     # h = 0.0355 + 0.005
     R = np.sqrt(0.04**2 - (center[2] - h)**2)
     # print("R:", R)
@@ -402,6 +402,10 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # move to home position
     arm.set_joint_positions(positions=theta, target_time=3, wait=True)
 
+    plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list, time_list)
+
+
+def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list, time_list, folder_name="test1"):
     # visualization
     import matplotlib.pyplot as plt
     x_list_np = np.array(x_list)
@@ -413,7 +417,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     ax.plot(x_list_np[:, 0], x_list_np[:, 1])
     ax.set_xlabel("x [m]")
     ax.set_ylabel("y [m]")
-    ax.legend(["pos_dis", "pos_res"])
+    ax.legend(["Reference trajectory", "Result"])
 
     w_list_np = np.array(w_list)
     w_ref_list_np = np.array(w_ref_list)
@@ -497,10 +501,10 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
 
     import os
     os.makedirs("./plot", exist_ok=True)
-    os.makedirs("./plot/test1", exist_ok=True)
-    fig_traj.savefig("./plot/test1/traj.png")
-    fig_w.savefig("./plot/test1/wrench.png")
-    fig_3d.savefig("./plot/test1/3d_plot.png")
+    os.makedirs(f"./plot/{folder_name}", exist_ok=True)
+    fig_traj.savefig(f"./plot/{folder_name}/traj.png")
+    fig_w.savefig(f"./plot/{folder_name}/wrench.png")
+    fig_3d.savefig(f"./plot/{folder_name}/3d_plot.png")
 
     # save csv
     # import math
@@ -529,7 +533,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     )
     print(rows)
     import csv
-    with open("./plot/test1/trajectory.csv", "w") as f:
+    with open(f"./plot/{folder_name}/trajectory.csv", "w") as f:
         writer = csv.writer(f)
         writer.writerow(
             ["time"] +
@@ -541,6 +545,95 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         writer.writerows(rows)
 
     plt.show()
+
+
+def powder_grinding_ioana():
+
+    # Real robot
+    mortar_position = np.array([-0.17, 0.51, 0.0755])
+    fix_motion_duration = 3
+
+    # Simulation (Gazebo)
+    # mortar_position = np.array([-0.170, 0.510, 0.055])
+    # fix_motion_duration = 1
+
+    duration = 15
+    frequency = 500
+    num_waypoints = duration * frequency // 10
+    mortar_diameter = 0.08
+    desired_height = 0.01
+    fraction = 0.5
+    initial_orientation = [0.707,  -0.707, 0.0,  0.0]
+
+    reference_trajectory = traj_utils.generate_mortar_trajectory(mortar_diameter, desired_height, num_waypoints, initial_orientation, fraction)
+    # start trajectory at the center of the mortar
+    reference_trajectory[:, :3] += mortar_position
+
+    # reference_trajectory[:, 2] += 0.025  # offset height if necessary
+
+    reference_force = [[0, 0, -5, 0, 0, 0]] * num_waypoints
+
+    # move to home position
+    home_config = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
+    arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
+
+    # controller config
+    arm.set_position_control_mode(True)
+    arm.set_control_mode(mode="parallel")
+    arm.set_solver_parameters(error_scale=0.5, iterations=1)
+    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
+    p_gains = [0.03, 0.03, 0.03, 1.5, 1.5, 1.5]
+    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    arm.update_pd_gains(p_gains, d_gains=d_gains)
+
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    arm.update_selection_matrix(selection_matrix)
+
+    # Move to first step in trajectory
+    ee = arm.end_effector()
+    arm.set_target_pose(
+        pose=np.concatenate([np.array([reference_trajectory[0, 0], reference_trajectory[0, 1], reference_trajectory[0, 2] + 0.05]), ee[3:]]),
+        target_time=fix_motion_duration,
+        wait=True,
+    )
+
+    arm.set_target_pose(
+        pose=reference_trajectory[0, :],
+        target_time=fix_motion_duration,
+        wait=True,
+    )
+
+    x_list, x_ref_list, w_list, w_ref_list, R_list, time_list = [], [], [], [], [], []
+
+    def f(x, w, tp, tf):
+        # current pose, current wrench, target pose, target force
+        time_list.append(rospy.get_time())
+        x_list.append(x)
+        w_list.append(w)
+        R = R_base2surface(pos=tp[:3], center=mortar_position)
+        R_list.append(R)
+        x_ref_list.append(tp)
+        w_ref_list.append(tf)
+
+    input("Press ENTER to start")
+
+    arm.zero_ft_sensor()
+    arm.execute_compliance_control(
+        reference_trajectory,
+        target_wrench=reference_force,
+        # max_force_torque=[50., 50., 50., 5., 5., 5.],
+        max_force_torque=[500., 500., 500., 50., 50., 50.],
+        duration=duration,
+        scale_up_error=True,
+        max_scale_error=3.0,
+        auto_stop=False,
+        func=f,
+    )
+
+    # move to home position
+    arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
+
+    plot_stuff(x_list, x_ref_list, reference_trajectory, w_list, w_ref_list, mortar_position, R_list, time_list, folder_name="cb_test1")
 
 
 def move_force():
@@ -713,6 +806,8 @@ def main():
                         help='move to cartesian configuration')
     parser.add_argument('-pg', '--powder_grounding', action='store_true',
                         help='powder_grounding')
+    parser.add_argument('-pgi', '--powder_grounding_ioana', action='store_true',
+                        help='powder_grounding ioana')
     parser.add_argument('-mf', '--move_force', action='store_true',
                         help='move towards target force')
     parser.add_argument('-fd', '--free_drive', action='store_true',
@@ -755,6 +850,8 @@ def main():
 
     if args.move_cartesian:
         move_cartesian()
+    if args.powder_grounding_ioana:
+        powder_grinding_ioana()
     if args.powder_grounding:
         powder_grounding()
     if args.move_force:
