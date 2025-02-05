@@ -412,7 +412,7 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     w_ref_list_np = np.array(w_ref_list)
     fig_w = plt.figure()
     ax = fig_w.add_subplot(111)
-    ax.plot(w_list_np[:, :3])
+    ax.plot(-w_list_np[:, :3])
     ax.plot(-w_ref_list_np[:, :3], ls="--")
     colors = ["C0","C1","C2","C0","C1","C2"]
     for i,j in enumerate(ax.lines):

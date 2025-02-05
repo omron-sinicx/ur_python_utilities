@@ -342,7 +342,7 @@ class CompliantController(Arm):
 
         while not rospy.is_shutdown() and (rospy.get_time() - initial_time) < duration:
 
-            current_wrench = self.get_wrench(base_frame_control=True)
+            current_wrench = self.get_wrench()
             rospy.loginfo_throttle(1, 'CURRENT F/T {}'.format(current_wrench))
 
             if termination_criteria is not None:
