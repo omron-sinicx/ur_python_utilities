@@ -24,6 +24,7 @@
 #
 # Author: Cristian Beltran
 
+import datetime
 import sys
 import signal
 from ur_control import spalg, utils, traj_utils, constants
@@ -414,8 +415,8 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     ax = fig_w.add_subplot(111)
     ax.plot(-w_list_np[:, :3])
     ax.plot(-w_ref_list_np[:, :3], ls="--")
-    colors = ["C0","C1","C2","C0","C1","C2"]
-    for i,j in enumerate(ax.lines):
+    colors = ["C0", "C1", "C2", "C0", "C1", "C2"]
+    for i, j in enumerate(ax.lines):
         j.set_color(colors[i])
     ax.legend(["x", "y", "z", "x_tgt", "y_tgt", "z_tgt"])
     ax.set_ylabel("Force [N]")
@@ -541,29 +542,37 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
 
 def powder_grinding_ioana():
 
-    # Real robot
     mortar_position = np.array([-0.16484, 0.50799, 0.03673])
-    fix_motion_duration = 3
 
-    # Simulation (Gazebo)
-    # mortar_position = np.array([-0.170, 0.510, 0.055])
-    # fix_motion_duration = 1
+    if arm.dashboard_services.use_real_robot:
+        # Real robot
+        fix_motion_duration = 3
+        max_force_torque = [50., 50., 50., 5., 5., 5.]
+        env = "real"
+        param_scale = 1
+    else:
+        # Simulation (Gazebo)
+        fix_motion_duration = 1
+        max_force_torque = [250., 250., 250., 50., 50., 50.]
+        env = "sim"
+        param_scale = 0.1
 
-    duration = 15
+    duration = 10
     frequency = 500
     num_waypoints = duration * frequency // 10
     mortar_diameter = 0.08
     desired_height = 0.01
     fraction = 0.75
     initial_orientation = [0.707,  -0.707, 0.0,  0.0]
+    target_force = 1
 
     reference_trajectory = traj_utils.generate_mortar_trajectory(mortar_diameter, desired_height, num_waypoints, initial_orientation, fraction)
     # start trajectory at the center of the mortar
     reference_trajectory[:, :3] += mortar_position
 
-    reference_trajectory[:, 2] += 0.00  # offset height if necessary
+    reference_trajectory[:, 2] += 0.01  # offset height if necessary
 
-    reference_force = [[0, 0, -5, 0, 0, 0]] * num_waypoints
+    reference_force = [[0, 0, -target_force, 0, 0, 0]] * num_waypoints
 
     # move to home position
     home_config = [1.6363, -1.4535, 1.8073, -1.9241, -1.5649, -0.0005]
@@ -572,11 +581,11 @@ def powder_grinding_ioana():
     # controller config
     arm.set_position_control_mode(True)
     arm.set_control_mode(mode="parallel")
-    arm.set_solver_parameters(error_scale=0.5, iterations=1)
+    arm.set_solver_parameters(error_scale=1.5*param_scale, iterations=1)
     arm.update_stiffness([3000, 3000, 3000, 100, 100, 100])
-    p_gains = [0.01, 0.01, 0.01, 1.5, 1.5, 1.5]
-    # d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
-    d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
+    p_gains = [0.02, 0.02, 0.02, 1.5, 1.5, 1.5]
+    d_gains = [0.002, 0.002, 0.002, 0, 0, 0]
+    # d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
     selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
@@ -614,10 +623,9 @@ def powder_grinding_ioana():
     arm.execute_compliance_control(
         reference_trajectory,
         target_wrench=reference_force,
-        max_force_torque=[50., 50., 50., 5., 5., 5.],
-        # max_force_torque=[500., 500., 500., 50., 50., 50.], # for Gazebo sim
+        max_force_torque=max_force_torque,
         duration=duration,
-        scale_up_error=True,
+        scale_up_error=False,
         max_scale_error=3.0,
         auto_stop=False,
         func=f,
@@ -626,7 +634,11 @@ def powder_grinding_ioana():
     # move to home position
     arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
 
-    plot_stuff(x_list, x_ref_list, reference_trajectory, w_list, w_ref_list, mortar_position, R_list, time_list, folder_name="cb_test1")
+    current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
+    folder_name = f"gripper_frame_{env}_{duration}s_{target_force}N_{current_datetime}"
+    plot_stuff(x_list, x_ref_list, reference_trajectory, w_list,
+               w_ref_list, mortar_position, R_list, time_list,
+               folder_name=folder_name)
 
 
 def move_force():

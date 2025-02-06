@@ -277,7 +277,7 @@ class CompliantController(Arm):
     def set_solver_parameters(self, error_scale=None, iterations=None, publish_state_feedback=None):
         parameters = {"solver": {}}
         if error_scale:
-            error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
+            # error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
             parameters["solver"].update({"error_scale": round(error_scale, 4)})
         if iterations:
             parameters["solver"].update({"iterations": iterations})
