@@ -585,16 +585,17 @@ class Arm(object):
 
 ### FT sensor control ###
 
-    def zero_ft_sensor(self):
+    def zero_ft_sensor(self, sleep_time=0.05):
         """
         Reset force-torque sensor readings to zeros.
         """
         if not rospy.has_param("use_gazebo_sim"):
             # First try to zero FT from ur_driver
             self._zero_ft()
-            rospy.sleep(0.5)
+            rospy.sleep(sleep_time)
         # Then update filtered one
         self._zero_ft_filtered()
+        rospy.sleep(sleep_time)
 
     def set_ft_filtering(self, active=True):
         """

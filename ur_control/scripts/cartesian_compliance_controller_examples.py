@@ -27,6 +27,7 @@
 import datetime
 import sys
 import signal
+import timeit
 from ur_control import spalg, utils, traj_utils, constants
 from ur_control.fzi_cartesian_compliance_controller import CompliantController
 import argparse
@@ -473,7 +474,7 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     X = np.arange(center[0] - 0.04, center[0] + 0.04, 0.001)
     Y = np.arange(center[1] - 0.04, center[1] + 0.04, 0.001)
     X, Y = np.meshgrid(X, Y)
-    Z = -np.sqrt(-(X - center[0])**2 + -(Y - center[1])**2 + 0.04**2) + center[2]
+    Z = -np.sqrt(np.clip(-(X - center[0])**2 + -(Y - center[1])**2 + 0.04**2, 0, np.inf)) + center[2]
     # X = X + center[0]
     # Y = Y + center[1]
     # Z = Z + center[2]
@@ -506,11 +507,11 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     # print(ref_traj.repeat(repeat_num, axis=0).shape)
     time_np = np.array(time_list)
     time_np = time_np.reshape((time_np.shape[0], 1))
-    print(time_np.shape)
-    print(x_list_np.shape)
-    print(x_ref_list_np.shape)
-    print(w_list_np.shape)
-    print(w_ref_list_np.shape)
+    # print(time_np.shape)
+    # print(x_list_np.shape)
+    # print(x_ref_list_np.shape)
+    # print(w_list_np.shape)
+    # print(w_ref_list_np.shape)
     # time = np.arange(0, duration, duration / x_list_np.shape[0])
     # time = time.reshape((time.shape[0], 1))
 
@@ -524,7 +525,7 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
         ],
         axis=1,
     )
-    print(rows)
+    # print(rows)
     import csv
     with open(f"./plot/{folder_name}/trajectory.csv", "w") as f:
         writer = csv.writer(f)
@@ -541,7 +542,6 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
 
 
 def powder_grinding_ioana():
-
     mortar_position = np.array([-0.16484, 0.50799, 0.03673])
 
     if arm.dashboard_services.use_real_robot:
@@ -557,7 +557,7 @@ def powder_grinding_ioana():
         env = "sim"
         param_scale = 0.1
 
-    duration = 10
+    duration = 2
     frequency = 500
     num_waypoints = duration * frequency // 10
     mortar_diameter = 0.08
@@ -570,9 +570,9 @@ def powder_grinding_ioana():
     # start trajectory at the center of the mortar
     reference_trajectory[:, :3] += mortar_position
 
-    reference_trajectory[:, 2] += 0.01  # offset height if necessary
+    reference_trajectory[:, 2] += 0.05  # offset height if necessary
 
-    reference_force = [[0, 0, -target_force, 0, 0, 0]] * num_waypoints
+    reference_force = [[0, 0, -target_force, 0, 0, 0]] * len(reference_trajectory)
 
     # move to home position
     home_config = [1.6363, -1.4535, 1.8073, -1.9241, -1.5649, -0.0005]
@@ -588,7 +588,7 @@ def powder_grinding_ioana():
     # d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
 
-    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = [1, 1, 1, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     # Move to first step in trajectory
@@ -620,6 +620,8 @@ def powder_grinding_ioana():
     input("Press ENTER to start")
 
     arm.zero_ft_sensor()
+
+    start_time = timeit.default_timer()
     arm.execute_compliance_control(
         reference_trajectory,
         target_wrench=reference_force,
@@ -629,7 +631,9 @@ def powder_grinding_ioana():
         max_scale_error=3.0,
         auto_stop=False,
         func=f,
+        mode='TRACKING_ERROR'
     )
+    print(f"compliance control duration {timeit.default_timer()-start_time:0.02f}")
 
     # move to home position
     arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
