@@ -478,16 +478,16 @@ def gripper_frame_method():
     frequency = 500
     num_waypoints = duration * frequency // 10
     mortar_diameter = 0.08
-    desired_height = 0.005
+    desired_height = 0.0025
     fraction = 1.0
     initial_orientation = [0.707,  -0.707, 0.0,  0.0]
-    target_force = 1
+    target_force = 10
 
     reference_trajectory = traj_utils.generate_mortar_trajectory(mortar_diameter, desired_height, num_waypoints, initial_orientation, fraction)
     # start trajectory at the center of the mortar
     reference_trajectory[:, :3] += mortar_position
 
-    reference_trajectory[:, 2] += 0.05  # offset height if necessary
+    reference_trajectory[:, 2] += 0.00  # offset height if necessary
 
     reference_force = [[0, 0, -target_force, 0, 0, 0]] * len(reference_trajectory)
 
@@ -498,14 +498,15 @@ def gripper_frame_method():
     # controller config
     arm.set_position_control_mode(True)
     arm.set_control_mode(mode="parallel")
-    arm.set_solver_parameters(error_scale=1.5*param_scale, iterations=1)
+    arm.set_solver_parameters(error_scale=1.5*param_scale, iterations=3)
     arm.update_stiffness([3000, 3000, 3000, 100, 100, 100])
-    p_gains = [0.02, 0.02, 0.02, 1.5, 1.5, 1.5]
-    d_gains = [0.002, 0.002, 0.002, 0, 0, 0]
+    p_gains = [0.01, 0.01, 0.01, 1.5, 1.5, 1.5]
+    d_gains = [0.001, 0.001, 0.001, 0, 0, 0]
     # d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains=d_gains)
+    arm.step_thresholds["force"] = (True, 5)
 
-    selection_matrix = [1, 1, 1, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     # Move to first step in trajectory
