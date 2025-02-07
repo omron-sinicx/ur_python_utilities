@@ -132,6 +132,7 @@ class CompliantController(Arm):
             'force': (False, 1e8),  # newtons
             'torque': (False, 1e8),  # meters/newtons
         }
+        self.selection_matrix = np.ones(6)
 
         # Monitor external goals
         rospy.Subscriber('%s%s/target_frame' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), PoseStamped, self.target_pose_cb)
@@ -250,6 +251,7 @@ class CompliantController(Arm):
     def update_selection_matrix(self, selection_matrix):
         parameters = convert_selection_matrix_to_parameters(selection_matrix)
         self.update_controller_parameters(parameters)
+        self.selection_matrix = np.copy(selection_matrix)
 
     def update_pd_gains(self, p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
         parameters = convert_pd_gains_to_parameters(p_gains, d_gains)
@@ -443,7 +445,7 @@ class CompliantController(Arm):
                             rospy.logwarn_throttle(1, f"{orientation_error=:0.04f}")
                             thresholds_ok = False
                     if self.step_thresholds['force'][0]:
-                        force_error = np.linalg.norm(target_wrench[trajectory_index][:3] - current_wrench[:3])
+                        force_error = np.linalg.norm((target_wrench[trajectory_index][:3] - current_wrench[:3])*(1-self.selection_matrix[:3]))
                         if force_error > self.step_thresholds['force'][1]:
                             rospy.logwarn_throttle(1, f"{force_error=:0.04f}")
                             thresholds_ok = False
