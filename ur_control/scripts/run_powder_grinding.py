@@ -525,12 +525,14 @@ def gripper_frame_method():
 
     x_list, x_ref_list, w_list, w_ref_list, R_list, time_list = [], [], [], [], [], []
 
+    sphere_center = mortar_position + [0, 0, 0.04]
+
     def f(x, w, tp, tf):
         # current pose, current wrench, target pose, target force
         time_list.append(rospy.get_time())
         x_list.append(x)
         w_list.append(w)
-        R = R_base2surface(pos=tp[:3], center=mortar_position)
+        R = R_base2surface(pos=tp[:3], center=sphere_center)
         R_list.append(R)
         x_ref_list.append(tp)
         w_ref_list.append(tf)
@@ -559,7 +561,7 @@ def gripper_frame_method():
     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
     folder_name = f"gripper_frame_{env}_{duration}s_{target_force}N_{current_datetime}"
     plot_stuff(x_list, x_ref_list, reference_trajectory, w_list,
-               w_ref_list, mortar_position, R_list, time_list,
+               w_ref_list, sphere_center, R_list, time_list,
                folder_name=folder_name)
 
 
