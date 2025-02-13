@@ -149,7 +149,6 @@ def move_force():
 
     arm.set_solver_parameters(error_scale=0.5, iterations=1)
     arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
-    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
 
     p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
     d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
@@ -166,10 +165,14 @@ def move_force():
     # print(transform)
     # print("TF", tf[:3])
 
-    res = arm.execute_compliance_control(ee, target_wrench=target_force,
-                                         max_force_torque=[30., 30., 30., 4., 4., 4.], duration=15,
-                                         stop_at_wrench=stop_at_wrench,
-                                         stop_on_target_force=True)
+    res = arm.execute_compliance_control(
+        ee,
+        target_wrench=target_force,
+        max_force_torque=[30., 30., 30., 4., 4., 4.],
+        duration=15,
+        stop_at_wrench=stop_at_wrench,
+        stop_on_target_force=True,
+    )
     print(res)
     print("EE change", ee - arm.end_effector())
 
@@ -263,16 +266,41 @@ def test():
     # start here
     move_joints()
 
-    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    arm.move_relative(
+        transformation=[0, 0, -0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        target_time=0.5,
+        wait=True,
+    )
     # Move down (cut)
-    arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+    arm.move_relative(
+        transformation=[0, 0, -0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        target_time=0.5,
+        wait=True,
+    )
     for _ in range(3):
         # Move down (cut)
-        arm.move_relative(transformation=[0, 0, -0.03, 0, 0, 0], relative_to_tcp=False, target_time=0.5, wait=True)
+        arm.move_relative(
+            transformation=[0, 0, -0.03, 0, 0, 0],
+            relative_to_tcp=False,
+            target_time=0.5,
+            wait=True,
+        )
 
     # Move back up and to the next initial pose
-    arm.move_relative(transformation=[0, 0, 0.03, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
-    arm.move_relative(transformation=[0, 0.01, 0, 0, 0, 0], relative_to_tcp=False, duration=0.25, wait=True)
+    arm.move_relative(
+        transformation=[0, 0, 0.03, 0, 0, 0],
+        relative_to_tcp=False,
+        duration=0.25,
+        wait=True,
+    )
+    arm.move_relative(
+        transformation=[0, 0.01, 0, 0, 0, 0],
+        relative_to_tcp=False,
+        duration=0.25,
+        wait=True,
+    )
 
     arm.set_joint_positions(positions=q, target_time=1, wait=True)
     q = [1.3524, -1.5555, 1.7697, -1.7785, -1.5644, 1.3493]
