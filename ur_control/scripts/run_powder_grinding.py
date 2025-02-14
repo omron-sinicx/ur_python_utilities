@@ -161,8 +161,8 @@ def recompute_trajectory(R, h, num_waypoints):
 
     # load_N = np.random.randint(low=1, high=20)  # take a random force reference
     # ref_force = np.array([[0, 0, load_N, 0, 0, 0]]*num_waypoints)
-    # ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
-    ref_force = np.array([[0, 0, -5.0, 0, 0, 0]] * num_waypoints)
+    ref_force = np.array([[0, 0, 0, 0, 0, 0]] * num_waypoints)
+    # ref_force = np.array([[0, 0, -5.0, 0, 0, 0]] * num_waypoints)
 
     for i in range(num_waypoints):
         R = R_base2surface(pos=ref_traj[i, :3], center=center)
@@ -195,7 +195,7 @@ def R_base2surface(pos=[0., 0., 0.], center=[0., 0., 0.]):
     return R
 
 
-def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
+def powder_grounding(center=np  .array([-0.17, 0.51, 0.0755])):
     duration = 15
     frequency = 500
     num_waypoints = duration * frequency // 10
@@ -209,9 +209,9 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
         h=h,
         num_waypoints=num_waypoints,
     )
-    # z_offset = 0.1
+    z_offset = 0.1
     # z_offset = 0.03
-    z_offset = 0.001
+    # z_offset = 0.001
     ref_traj += np.array([center[0], center[1], z_offset, 0, 0, 0, 0])
     print(ref_traj)
     print(ref_force)
@@ -220,7 +220,8 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     arm.set_joint_positions(positions=theta, target_time=3, wait=True)
     ee = arm.end_effector()
     arm.set_target_pose(
-        pose=np.concatenate([np.array([center[0], center[1], ref_traj[0, 2] + 0.05]), ee[3:]]),
+        pose=np.concatenate(
+            [np.array([center[0], center[1], ref_traj[0, 2] + 0.05]), ee[3:]]),
         target_time=3,
         wait=True,
     )
@@ -240,8 +241,8 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # arm.update_stiffness([3000, 3000, 3000, 100, 100, 100])
 
     # selection_matrix = [0.5, 0.5, 1, 0.5, 0.5, 0.5]
-    # selection_matrix = np.ones(6)
-    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = np.ones(6)
+    # selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     p_gains = [0.03, 0.03, 0.03, 1.5, 1.5, 1.5]
@@ -285,7 +286,7 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     #     auto_stop=False,
     # )
 
-    input("Press ENTER to start")
+    # input("Press ENTER to start")
 
     arm.zero_ft_sensor()
     res = arm.execute_compliance_control(
@@ -310,7 +311,8 @@ def powder_grounding(center=np.array([-0.17, 0.51, 0.0755])):
     # move to home position
     arm.set_joint_positions(positions=theta, target_time=3, wait=True)
 
-    plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list, time_list)
+    plot_stuff(x_list, x_ref_list, ref_traj, w_list,
+               w_ref_list, center, R_list, time_list)
 
 
 def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list, time_list, folder_name="test1"):
@@ -391,7 +393,8 @@ def plot_stuff(x_list, x_ref_list, ref_traj, w_list, w_ref_list, center, R_list,
     X = np.arange(center[0] - 0.04, center[0] + 0.04, 0.001)
     Y = np.arange(center[1] - 0.04, center[1] + 0.04, 0.001)
     X, Y = np.meshgrid(X, Y)
-    Z = -np.sqrt(np.clip(-(X - center[0])**2 + -(Y - center[1])**2 + 0.04**2, 0, np.inf)) + center[2]
+    Z = -np.sqrt(np.clip(-(X - center[0])**2 + -(Y -
+                 center[1])**2 + 0.04**2, 0, np.inf)) + center[2]
     # X = X + center[0]
     # Y = Y + center[1]
     # Z = Z + center[2]
@@ -483,17 +486,28 @@ def gripper_frame_method():
     initial_orientation = [0.707,  -0.707, 0.0,  0.0]
     target_force = 10
 
-    reference_trajectory = traj_utils.generate_mortar_trajectory(mortar_diameter, desired_height, num_waypoints, initial_orientation, fraction)
+    reference_trajectory = traj_utils.generate_mortar_trajectory(
+        mortar_diameter,
+        desired_height,
+        num_waypoints,
+        initial_orientation,
+        fraction,
+    )
     # start trajectory at the center of the mortar
     reference_trajectory[:, :3] += mortar_position
 
     reference_trajectory[:, 2] += 0.00  # offset height if necessary
 
-    reference_force = [[0, 0, -target_force, 0, 0, 0]] * len(reference_trajectory)
+    reference_force = [[0, 0, -target_force, 0, 0, 0]] * \
+        len(reference_trajectory)
 
     # move to home position
     home_config = [1.6363, -1.4535, 1.8073, -1.9241, -1.5649, -0.0005]
-    arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
+    arm.set_joint_positions(
+        positions=home_config,
+        target_time=fix_motion_duration,
+        wait=True,
+    )
 
     # controller config
     arm.set_position_control_mode(True)
@@ -506,13 +520,17 @@ def gripper_frame_method():
     arm.update_pd_gains(p_gains, d_gains=d_gains)
     arm.step_thresholds["force"] = (True, 5)
 
-    selection_matrix = [1, 1, 0, 1, 1, 1]  # x, y, z, rx, ry, rz
+    selection_matrix = [1, 1, 1, 1, 1, 1]  # x, y, z, rx, ry, rz
     arm.update_selection_matrix(selection_matrix)
 
     # Move to first step in trajectory
     ee = arm.end_effector()
     arm.set_target_pose(
-        pose=np.concatenate([np.array([reference_trajectory[0, 0], reference_trajectory[0, 1], reference_trajectory[0, 2] + 0.05]), ee[3:]]),
+        pose=np.concatenate([np.array([
+            reference_trajectory[0, 0],
+            reference_trajectory[0, 1],
+            reference_trajectory[0, 2] + 0.05
+        ]), ee[3:]]),
         target_time=fix_motion_duration,
         wait=True,
     )
@@ -553,13 +571,16 @@ def gripper_frame_method():
         func=f,
         mode='TRACKING_ERROR'
     )
-    print(f"compliance control duration {timeit.default_timer()-start_time:0.02f}")
+    print("compliance control duration "
+          f"{timeit.default_timer()-start_time:0.02f}")
 
     # move to home position
-    arm.set_joint_positions(positions=home_config, target_time=fix_motion_duration, wait=True)
+    arm.set_joint_positions(positions=home_config,
+                            target_time=fix_motion_duration, wait=True)
 
     current_datetime = datetime.datetime.now().strftime("%Y-%m-%d_%H_%M_%S")
-    folder_name = f"gripper_frame_{env}_{duration}s_{target_force}N_{current_datetime}"
+    folder_name = f"gripper_frame_{env}_{duration}s_" + \
+        f"{target_force}N_{current_datetime}"
     plot_stuff(x_list, x_ref_list, reference_trajectory, w_list,
                w_ref_list, sphere_center, R_list, time_list,
                folder_name=folder_name)
@@ -605,11 +626,12 @@ def main():
         joints_prefix = args.namespace + '_'
 
     global arm
-    arm = CompliantController(namespace=ns,
-                              joint_names_prefix=joints_prefix,
-                              ee_link=tcp_link,
-
-                              gripper_type=None)
+    arm = CompliantController(
+        namespace=ns,
+        joint_names_prefix=joints_prefix,
+        ee_link=tcp_link,
+        gripper_type=None,
+    )
 
     if not arm.dashboard_services.activate_ros_control_on_ur():
         exit(0)
