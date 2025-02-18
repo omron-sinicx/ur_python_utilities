@@ -129,7 +129,7 @@ class IKSolver(ur_kinematics):
     def update_kinematics(self):
         """Update forward kinematics for current joint states"""
         # Update end effector pose
-        self.fk_pos_solver.JntToCart(self.current_positions, self.end_effector_pose)
+        self.fk_pos_solver.JntToCart(self.joints_to_kdl('positions', self.current_positions), self.end_effector_pose)
 
         # Update end effector velocity
         vel_frame = PyKDL.FrameVel()
@@ -167,10 +167,10 @@ class IKSolver(ur_kinematics):
                     bounded_velocity / unbounded_velocity
                 )
 
-        if velocity_scaling_factor < 1.0:
-            print(f"Scaling down joint velocities by a factor of {velocity_scaling_factor}")
-            print(f"self.current_velocities {self.current_velocities}")
-            exit(0)
+        # if velocity_scaling_factor < 1.0:
+        #     print(f"Scaling down joint velocities by a factor of {velocity_scaling_factor}")
+        #     print(f"self.current_velocities {self.current_velocities}")
+        #     exit(0)
 
         # Apply scaling
         for i in range(self.number_joints):
@@ -248,7 +248,7 @@ class IKSolver(ur_kinematics):
         H = np.array([[jnt_space_inertia[i, j] for j in range(self.number_joints)]
                      for i in range(self.number_joints)])
         J = np.array([[jnt_jacobian[i, j] for j in range(self.number_joints)]
-                     for i in range(6)])
+                     for i in range(self.number_joints)])
 
         # Compute joint accelerations: ddot{q} = H^{-1} (J^T f)
         self.current_accelerations = np.linalg.inv(H).dot(J.T.dot(net_force))

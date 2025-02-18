@@ -200,7 +200,6 @@ class ur_kinematics(object):
         return [twist.vel[0], twist.vel[1], twist.vel[2], twist.rot[0], twist.rot[1], twist.rot[2]]
 
     def inverse_kinematics(self, position, orientation=None, seed=None):
-        ik = PyKDL.ChainIkSolverVel_pinv(self._arm_chain)
         pos = PyKDL.Vector(position[0], position[1], position[2])
         if isinstance(orientation, (np.ndarray, np.generic, list)):
             rot = PyKDL.Rotation()
@@ -214,7 +213,7 @@ class ur_kinematics(object):
                 seed_array[idx] = jnt
 
         # Make IK Call
-        if orientation.size != 0:
+        if orientation is not None:
             goal_pose = PyKDL.Frame(rot, pos)
         else:
             goal_pose = PyKDL.Frame(pos)
