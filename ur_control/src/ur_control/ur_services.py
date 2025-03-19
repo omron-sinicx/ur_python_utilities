@@ -246,6 +246,7 @@ class URServices():
                 return True
         else:
             rospy.logwarn("Failed to start program")
+            self.reset_connection()
             return self.activate_ros_control_on_ur(recursion_depth=recursion_depth+1)
 
     @ check_for_real_robot
