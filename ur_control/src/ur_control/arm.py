@@ -187,16 +187,16 @@ class Arm(object):
             self._zero_ft_filtered = rospy.ServiceProxy('%s/%s/filtered/zero_ftsensor' % (self.ns, self.ft_topic), Empty)
             self._zero_ft_filtered.wait_for_service(rospy.Duration(2.0))
 
-            if not rospy.has_param("use_gazebo_sim"):
-                self._zero_ft = rospy.ServiceProxy('%s/ur_hardware_interface/zero_ftsensor' % self.ns, Trigger)
-                self._zero_ft.wait_for_service(rospy.Duration(2.0))
-
             self._ft_filtered = rospy.ServiceProxy('%s/%s/filtered/enable_filtering' % (self.ns, self.ft_topic), SetBool)
             self._ft_filtered.wait_for_service(rospy.Duration(1.0))
 
             # Check that the FT topic is publishing
             if not utils.wait_for(lambda: self.current_ft_value is not None, timeout=2.0):
                 rospy.logerr('Timed out waiting for {0} topic'.format(ft_namespace))
+        
+        if not rospy.has_param("use_gazebo_sim"):
+            self._zero_ft = rospy.ServiceProxy('%s/ur_hardware_interface/zero_ftsensor' % self.ns, Trigger)
+            self._zero_ft.wait_for_service(rospy.Duration(2.0))
 
     def __ft_callback__(self, msg):
         self.current_ft_value = conversions.from_wrench(msg.wrench)
