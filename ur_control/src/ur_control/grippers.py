@@ -20,7 +20,7 @@ except ImportError:
 
 class GripperControllerBase():
     def __init__(self, namespace='', node_name='', prefix=None, timeout=5.0) -> None:
-        self.ns = utils.solve_namespace(namespace)
+        self.ns = namespace
         self.prefix = prefix if prefix is not None else ''
         self.valid_joint_names = []
         if rospy.has_param(self.ns + node_name + "/joint"):
@@ -260,7 +260,7 @@ class RobotiqGripper(GripperControllerBase):
         self.opening_width = 0.0
 
         self.gripper = actionlib.SimpleActionClient(self.ns + "gripper_action_controller", robotiq_msgs.msg.CModelCommandAction)
-        self.sub_gripper_status_ = rospy.Subscriber("%s/gripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
+        self.sub_gripper_status_ = rospy.Subscriber("%sgripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
 
         if rospy.has_param(self.ns + "gripper_action_controller/joint_name"):
             self.gripper_type = rospy.get_param(self.ns + "gripper_action_controller/joint_name")
