@@ -185,7 +185,7 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--robotiq_gripper', action='store_true', help='enable Robotiq gripper commands')
+        '--gripper', type=str, help='gripper type', default=None)
     parser.add_argument(
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
@@ -199,13 +199,20 @@ See help inside the example with the '?' key for key bindings.
 
     tcp_link = args.tcp
     joints_prefix = args.namespace + '_' if args.namespace else None
-    gripper = GripperType.ROBOTIQ if args.robotiq_gripper else GripperType.GENERIC
+    if args.gripper == 'robotiq':
+        gripper = GripperType.ROBOTIQ
+    elif args.gripper == 'generic':
+        gripper = GripperType.GENERIC
+    else:
+        gripper = None
 
     global arm
     arm = Arm(namespace=args.namespace,
               gripper_type=gripper,
               joint_names_prefix=joints_prefix,
               ee_link=tcp_link)
+
+    arm.dashboard_services.activate_ros_control_on_ur()
 
     map_keyboard()
     print("Done.")
