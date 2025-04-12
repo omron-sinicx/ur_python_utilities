@@ -31,84 +31,36 @@ import numpy as np
 from ur_control.arm import Arm
 from ur_control import conversions
 from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
+from ur_control.fzi_utils import (
+    is_more_extreme,
+    convert_selection_matrix_to_parameters,
+    convert_stiffness_to_parameters,
+    convert_pd_gains_to_parameters,
+    switch_cartesian_controllers
+)
 
 from geometry_msgs.msg import WrenchStamped, PoseStamped
 
 import dynamic_reconfigure.client
 
 
-def is_more_extreme(value, target):
-    if (np.all(value > 0) and np.all(target > 0)):
-        return np.all(value > target)
-    elif (np.all(value < 0) and np.all(target < 0)):
-        return np.all(value < target)
-    return False
-
-
-def convert_selection_matrix_to_parameters(selection_matrix):
-    return {
-        "stiffness":
-        {
-            "sel_x": selection_matrix[0],
-            "sel_y": selection_matrix[1],
-            "sel_z": selection_matrix[2],
-            "sel_ax": selection_matrix[3],
-            "sel_ay": selection_matrix[4],
-            "sel_az": selection_matrix[5],
-        }
-    }
-
-
-def convert_stiffness_to_parameters(stiffness):
-    return {
-        "stiffness":
-        {
-            "trans_x": stiffness[0],
-            "trans_y": stiffness[1],
-            "trans_z": stiffness[2],
-            "rot_x": stiffness[3],
-            "rot_y": stiffness[4],
-            "rot_z": stiffness[5],
-        }
-    }
-
-
-def convert_pd_gains_to_parameters(p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
-    return {
-        "trans_x": {"p": p_gains[0], "d": d_gains[0]},
-        "trans_y": {"p": p_gains[1], "d": d_gains[1]},
-        "trans_z": {"p": p_gains[2], "d": d_gains[2]},
-        "rot_x": {"p": p_gains[3], "d": d_gains[3]},
-        "rot_y": {"p": p_gains[4], "d": d_gains[4]},
-        "rot_z": {"p": p_gains[5], "d": d_gains[5]}
-    }
-
-
-def switch_cartesian_controllers(func):
-    '''Decorator that switches from cartesian to joint trajectory controllers and back'''
-
-    def wrap(*args, **kwargs):
-        if not args[0].auto_switch_controllers:
-            return func(*args, **kwargs)
-
-        args[0].activate_cartesian_controller()
-
-        try:
-            res = func(*args, **kwargs)
-        except Exception as e:
-            rospy.logerr("Exception: %s" % e)
-            res = ExecutionResult.DONE
-
-        args[0].activate_joint_trajectory_controller()
-
-        return res
-    return wrap
-
-
 class CompliantController(Arm):
-    def __init__(self,
-                 **kwargs):
-        """ Compliant controller using FZI Cartesian Compliance controllers """
+    """
+    A compliant controller using FZI Cartesian Compliance controllers.
+
+    This class extends the Arm class to provide compliant control capabilities
+    using the FZI Cartesian Compliance controllers. It allows for setting
+    target poses and wrenches, and provides methods for controlling the robot
+    in a compliant manner.
+    """
+
+    def __init__(self, **kwargs):
+        """
+        Initialize the CompliantController.
+
+        Args:
+            **kwargs: Additional arguments to pass to the Arm constructor
+        """
         Arm.__init__(self, **kwargs)
 
         self.is_gazebo_sim = False
@@ -160,6 +112,9 @@ class CompliantController(Arm):
         rospy.on_shutdown(self.activate_joint_trajectory_controller)
 
     def __del__(self):
+        """
+        Destructor that ensures the update thread is stopped.
+        """
         # wake up thread and stop it
         if hasattr(self, 'update_condition'):
             with self.update_condition:
@@ -167,20 +122,50 @@ class CompliantController(Arm):
                 self.update_condition.notify_all()
 
     def target_pose_cb(self, data):
+        """
+        Callback for target pose messages.
+
+        Args:
+            data (PoseStamped): The target pose message
+        """
         self.current_target_pose = conversions.from_pose_to_list(data.pose)
 
     def target_wrench_cb(self, data):
+        """
+        Callback for target wrench messages.
+
+        Args:
+            data (WrenchStamped): The target wrench message
+        """
         self.current_target_wrench = conversions.from_wrench(data.wrench)
 
     def activate_cartesian_controller(self):
+        """
+        Activate the cartesian compliance controller.
+
+        Returns:
+            bool: True if the controller was activated successfully, False otherwise
+        """
         return self.controller_manager.switch_controllers(controllers_on=[CARTESIAN_COMPLIANCE_CONTROLLER],
                                                           controllers_off=[JOINT_TRAJECTORY_CONTROLLER])
 
     def activate_joint_trajectory_controller(self):
+        """
+        Activate the joint trajectory controller.
+
+        Returns:
+            bool: True if the controller was activated successfully, False otherwise
+        """
         return self.controller_manager.switch_controllers(controllers_on=[JOINT_TRAJECTORY_CONTROLLER],
                                                           controllers_off=[CARTESIAN_COMPLIANCE_CONTROLLER])
 
     def set_cartesian_target_wrench(self, wrench: list):
+        """
+        Set the target wrench for the cartesian compliance controller.
+
+        Args:
+            wrench (list): A 6-element list representing the target wrench [fx, fy, fz, tx, ty, tz]
+        """
         # Publish the target wrench
         try:
             target_wrench = WrenchStamped()
@@ -191,6 +176,12 @@ class CompliantController(Arm):
             rospy.logerr("Fail to set_target_wrench(): %s" % e)
 
     def set_cartesian_target_pose(self, pose: list):
+        """
+        Set the target pose for the cartesian compliance controller.
+
+        Args:
+            pose (list): A 7-element list representing the target pose [x, y, z, qx, qy, qz, qw]
+        """
         # Publish the target pose
         try:
             target_pose = conversions.to_pose_stamped(self.base_link, pose)
@@ -199,6 +190,12 @@ class CompliantController(Arm):
             rospy.logerr("Fail to set_target_pose(): %s" % e)
 
     def publish_parameter_update(self, parameters):
+        """
+        Publish parameter updates to the controller.
+
+        Args:
+            parameters (dict): A dictionary containing the parameters to update
+        """
         try:
             for param in parameters.keys():
                 self.dyn_config_clients[param].update_configuration(parameters[param])
@@ -207,6 +204,9 @@ class CompliantController(Arm):
             pass
 
     def __update_controller_parameter_loop__(self):
+        """
+        Internal method that runs in a separate thread to update controller parameters.
+        """
         while not rospy.is_shutdown():
             if self.update_thread_stopped:
                 return
@@ -225,6 +225,12 @@ class CompliantController(Arm):
                     parameters = None
 
     def update_controller_parameters(self, parameters: dict):
+        """
+        Update controller parameters.
+
+        Args:
+            parameters (dict): A dictionary containing the parameters to update
+        """
         if self.async_mode:
             with self.update_lock:
                 self.param_update_queue.append(parameters)
@@ -238,18 +244,46 @@ class CompliantController(Arm):
             self.publish_parameter_update(parameters)
 
     def update_selection_matrix(self, selection_matrix):
+        """
+        Update the selection matrix for the controller.
+
+        Args:
+            selection_matrix (numpy.ndarray): A 6-element array representing the selection matrix
+        """
         parameters = convert_selection_matrix_to_parameters(selection_matrix)
         self.update_controller_parameters(parameters)
 
     def update_pd_gains(self, p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
+        """
+        Update the P and D gains for the controller.
+
+        Args:
+            p_gains (numpy.ndarray): A 6-element array representing the P gains
+            d_gains (numpy.ndarray, optional): A 6-element array representing the D gains. Defaults to zeros.
+        """
         parameters = convert_pd_gains_to_parameters(p_gains, d_gains)
         self.update_controller_parameters(parameters)
 
     def update_stiffness(self, stiffness):
+        """
+        Update the stiffness values for the controller.
+
+        Args:
+            stiffness (numpy.ndarray): A 6-element array representing the stiffness values
+        """
         parameters = convert_stiffness_to_parameters(stiffness)
         self.update_controller_parameters(parameters)
 
     def set_control_mode(self, mode="parallel"):
+        """
+        Set the control mode for the controller.
+
+        Args:
+            mode (str, optional): The control mode to set. Options are "parallel" or "spring-mass-damper". Defaults to "parallel".
+
+        Raises:
+            ValueError: If an unknown control mode is specified
+        """
         parameters = {"stiffness": {}}
         if mode == "parallel":
             parameters["stiffness"].update({"use_parallel_force_position_control": True})
@@ -260,20 +294,45 @@ class CompliantController(Arm):
         self.update_controller_parameters(parameters)
 
     def set_position_control_mode(self, enable=True):
+        """
+        Set the position control mode for the controller.
+
+        Args:
+            enable (bool, optional): Whether to enable position control mode. Defaults to True.
+        """
         parameters = convert_selection_matrix_to_parameters(np.ones(6))
         parameters["stiffness"].update({"use_parallel_force_position_control": enable})
         self.update_controller_parameters(parameters)
 
     def set_hand_frame_control(self, enable):
+        """
+        Set whether to use hand frame control.
+
+        Args:
+            enable (bool): Whether to enable hand frame control
+        """
         parameters = {"hand_frame_control": {"hand_frame_control": enable}}
         self.update_controller_parameters(parameters)
 
     def set_end_effector_link(self, end_effector_link):
-        """ Change the end_effector_link used in the Cartesian Compliance Controllers"""
+        """
+        Change the end effector link used in the Cartesian Compliance Controllers.
+
+        Args:
+            end_effector_link (str): The name of the end effector link
+        """
         parameters = {"end_effector_link": {"end_effector_link": end_effector_link}}
         self.update_controller_parameters(parameters)
 
     def set_solver_parameters(self, error_scale=None, iterations=None, publish_state_feedback=None):
+        """
+        Set solver parameters for the controller.
+
+        Args:
+            error_scale (float, optional): The error scale parameter. Defaults to None.
+            iterations (int, optional): The number of iterations. Defaults to None.
+            publish_state_feedback (bool, optional): Whether to publish state feedback. Defaults to None.
+        """
         parameters = {"solver": {}}
         if error_scale:
             error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
@@ -285,6 +344,12 @@ class CompliantController(Arm):
         self.update_controller_parameters(parameters)
 
     def wait_for_robot_to_stop(self, wait_time=5):
+        """
+        Wait for the robot to stop moving.
+
+        Args:
+            wait_time (float, optional): The maximum time to wait in seconds. Defaults to 5.
+        """
         remaining_time = wait_time
         start_time = rospy.get_time()
 
@@ -307,7 +372,29 @@ class CompliantController(Arm):
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,
                                    duration: float, stop_on_target_force=False, termination_criteria=None,
                                    auto_stop=True, func=None, scale_up_error=False, max_scale_error=None,
-                                   relative_to_ee=False, stop_at_wrench=None):
+                                   stop_at_wrench=None):
+        """
+        Execute compliance control with a trajectory and target wrench.
+
+        Args:
+            trajectory (np.array): The trajectory to follow
+            target_wrench (np.array): The target wrench to apply
+            max_force_torque (list): The maximum force and torque limits
+            duration (float): The duration of the trajectory in seconds
+            stop_on_target_force (bool, optional): Whether to stop when the target force is reached. Defaults to False.
+            termination_criteria (callable, optional): A function that returns True when the execution should stop. Defaults to None.
+            auto_stop (bool, optional): Whether to automatically stop at the end of the trajectory. Defaults to True.
+            func (callable, optional): A function to call during execution. Defaults to None.
+            scale_up_error (bool, optional): Whether to scale up the error. Defaults to False.
+            max_scale_error (float, optional): The maximum scale error. Defaults to None.
+            stop_at_wrench (list, optional): The wrench at which to stop. Defaults to None.
+
+        Returns:
+            ExecutionResult: The result of the execution
+        """
+        # Set initial pose and wrench to zero
+        self.set_cartesian_target_pose(self.end_effector())
+        self.set_cartesian_target_wrench(np.zeros(6))
 
         # Space out the trajectory points
         trajectory = trajectory.reshape((-1, 7))  # Assuming this format [x,y,z,qx,qy,qz,qw]
@@ -348,10 +435,14 @@ class CompliantController(Arm):
                     break
 
             rospy.loginfo_throttle(1, 'F/T {}'.format(np.round(current_wrench[:3], 2)))
-            if stop_on_target_force and is_more_extreme(current_wrench[stop_target_wrench_mask], stop_at_wrench[stop_target_wrench_mask]):
-                rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 2)) + ' Stopping!')
-                result = ExecutionResult.STOP_ON_TARGET_FORCE
-                break
+
+            # Check if any of the monitored wrench dimensions have exceeded their target values
+            if stop_on_target_force:
+                # Check if any dimension has exceeded its target
+                if is_more_extreme(current_wrench[stop_target_wrench_mask], stop_at_wrench[stop_target_wrench_mask]):
+                    rospy.loginfo('Target F/T reached {}'.format(np.round(current_wrench, 2)) + ' Stopping!')
+                    result = ExecutionResult.STOP_ON_TARGET_FORCE
+                    break
 
             # Safety limits: max force
             if np.any(np.abs(current_wrench) > max_force_torque):
@@ -378,13 +469,21 @@ class CompliantController(Arm):
         if auto_stop:
             # Stop moving
             # set position control only, then fix the pose to the current one
-            self.set_cartesian_target_pose(self.end_effector())
             self.set_position_control_mode()
+            self.set_cartesian_target_pose(self.end_effector())
+            self.set_cartesian_target_wrench(np.zeros(6))
             self.wait_for_robot_to_stop(wait_time=5)
 
         return result
 
     def sliding_error(self, target_pose, max_scale_error):
+        """
+        Scale error_scale as position error decreases until a max scale error.
+
+        Args:
+            target_pose (np.array): The target pose
+            max_scale_error (float): The maximum scale error
+        """
         # Scale error_scale as position error decreases until a max scale error
         position_error = np.linalg.norm(target_pose[:3] - self.end_effector()[:3])
         # from position_error < 0.01m increase scale error
