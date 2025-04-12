@@ -68,15 +68,26 @@ class ControllersConnection():
         except Exception as e:
             rospy.logerr("Unload controllers service call failed: %s" % e)
 
-    def check_controllers_state(self, on_controllers, off_controllers):
+    def check_on_controllers_state(self, on_controllers):
+        """
+        Return a list of controllers that need to be switched on (not already running)
+        """
+        controllers_to_switch = []
         for c in on_controllers:
             if self.get_controller_state(c) != "running":
-                return False
+                controllers_to_switch.append(c)
+        return controllers_to_switch
 
+    def check_off_controllers_state(self, off_controllers):
+        """
+        Return a list of controllers that need to be switched off (currently running)
+        """
+        controllers_to_switch = []
         for c in off_controllers:
-            if self.get_controller_state(c) != "stopped":
-                return False
-        return True
+            state = self.get_controller_state(c)
+            if state == "running":
+                controllers_to_switch.append(c)
+        return controllers_to_switch
 
     def switch_controllers(self, controllers_on, controllers_off,
                            strictness=1):
@@ -94,11 +105,11 @@ class ControllersConnection():
         try:
             self.switch_service.wait_for_service(0.1)
             switch_request_object = SwitchControllerRequest()
-            switch_request_object.start_controllers = controllers_on
-            switch_request_object.stop_controllers = controllers_off
+            switch_request_object.start_controllers = self.check_on_controllers_state(controllers_on)
+            switch_request_object.stop_controllers = self.check_off_controllers_state(controllers_off)
             switch_request_object.strictness = strictness
 
-            if self.check_controllers_state(controllers_on, controllers_off):
+            if switch_request_object.start_controllers == [] and switch_request_object.stop_controllers == []:
                 return True
 
             switch_result = self.switch_service(switch_request_object)
