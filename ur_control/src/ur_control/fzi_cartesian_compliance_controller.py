@@ -26,6 +26,7 @@ import collections
 import threading
 import types
 import rospy
+import tf
 import numpy as np
 
 from ur_control.arm import Arm
@@ -39,10 +40,13 @@ from ur_control.fzi_utils import (
     switch_cartesian_controllers
 )
 
-from geometry_msgs.msg import WrenchStamped, PoseStamped
+from geometry_msgs.msg import WrenchStamped, PoseStamped, TwistStamped
+from nav_msgs.msg import Odometry
+from std_srvs.srv import Empty
 
 import dynamic_reconfigure.client
 
+from gazebo_msgs.srv import StepControl, StepControlRequest
 
 class CompliantController(Arm):
     """
@@ -63,9 +67,20 @@ class CompliantController(Arm):
         """
         Arm.__init__(self, **kwargs)
 
-        self.is_gazebo_sim = False
-        if rospy.has_param("use_gazebo_sim"):
-            self.is_gazebo_sim = True
+        self.is_gazebo_sim = rospy.get_param("use_gazebo_sim", False)
+        self.use_step_control = rospy.get_param("/ur3e_gym/use_step_control", False)
+        if self.is_gazebo_sim and self.use_step_control:
+            self.step_simulation_serv = rospy.ServiceProxy('/gazebo/step_control', StepControl)
+            self.step_simulation_serv.wait_for_service(1.0)
+            self.disect_step_sim = rospy.ServiceProxy('/disect/step_simulation', Empty)
+            
+            # Publish pose to another topic
+            msg = conversions.to_pose_stamped(self.base_link, [0, 0, 0, 0, 0, 0, 1])
+            tf_listener = tf.TransformListener()
+            rospy.sleep(1)
+            robot_base_to_disect = tf_listener.transformPose('cutting_board_disect', msg)
+            self.transform_pose = transformations.pose_to_transform(conversions.from_pose_to_list(robot_base_to_disect.pose))
+            self.pub_odom = rospy.Publisher('/disect/knife/odom', Odometry, queue_size=10)
 
         self.rate = rospy.Rate(self.joint_traj_controller.rate)
         self.min_dt = 1. / self.joint_traj_controller.rate
@@ -466,7 +481,7 @@ class CompliantController(Arm):
 
             self.rate.sleep()
 
-        if auto_stop:
+        if auto_stop and not self.use_step_control:
             # Stop moving
             # set position control only, then fix the pose to the current one
             self.set_position_control_mode()
@@ -475,6 +490,33 @@ class CompliantController(Arm):
             self.wait_for_robot_to_stop(wait_time=5)
 
         return result
+
+    def compute_disect_knife_pose(self):
+        knife_pose = self.end_effector(tip_link='b_bot_knife_sim')
+        disect_knife_pose = transformations.apply_transformation(knife_pose, self.transform_pose)
+
+        if self.previous_pose is None:
+            self.previous_pose = knife_pose
+
+        knife_twist = np.zeros(6)
+        knife_twist[:3] = (knife_pose[:3] - self.previous_pose[:3]) / 0.002
+
+        if np.any(np.abs(knife_twist) > 1.0):
+            self.previous_pose = knife_pose
+            return disect_knife_pose, np.zeros(6)
+        else:
+            knife_twist[3:] = transformations.angular_velocity_from_quaternions(knife_pose[3:], self.previous_pose[3:], 0.002)
+            self.previous_pose = knife_pose
+            disect_knife_twist = spalg.convert_twist(knife_twist, self.transform_pose)
+            return disect_knife_pose, disect_knife_twist
+
+    def publish_odom(self, pose, twist, update_pose=False):
+        msg = Odometry()
+        msg.header.frame_id = "update_pose" if update_pose else ""
+        msg.pose.pose = conversions.to_pose(pose)
+        msg.twist.twist.linear = conversions.to_vector3(twist[:3])
+        msg.twist.twist.angular = conversions.to_vector3(twist[3:])
+        self.pub_odom.publish(msg)
 
     def sliding_error(self, target_pose, max_scale_error):
         """

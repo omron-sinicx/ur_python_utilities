@@ -1,4 +1,3 @@
-from tabnanny import verbose
 import numpy as np
 import rospy
 import gym
@@ -41,6 +40,7 @@ class RobotGazeboEnv(gym.Env):
         self.cumulated_episode_reward = 0
         self.pause = False
         self._log_message = None
+        self.use_step_control = False
         rospy.logdebug("END init RobotGazeboEnv")
 
     def pause_callback(self, msg):
@@ -68,9 +68,11 @@ class RobotGazeboEnv(gym.Env):
             self._pause_env()
             self.pause = False
 
-        # self.robot_connection.unpause()
+        # Resume simulation
+        if self.use_step_control:
+            self.robot_connection.pause()
         self._set_action(action)
-        # self.robot_connection.pause()
+
         obs = self._get_obs()
         # incrementing the counters
         self.step_count += 1
@@ -82,8 +84,8 @@ class RobotGazeboEnv(gym.Env):
         self.cumulated_episode_reward += reward
         self.cumulated_reward_details += reward_details
         
-        # if done:
-        #     self.logger.info("reward details: %s, total: %s" % (np.round(self.cumulated_reward_details, 2), round(self.cumulated_episode_reward, 2)))
+        # Pause simulation
+        # self.robot_connection.pause()
 
         return obs, reward, done, info
 
@@ -97,8 +99,8 @@ class RobotGazeboEnv(gym.Env):
         self.cumulated_jerk = 0
         self.cumulated_vel = 0
         self.cumulated_reward_details = np.zeros(7)
-        self._reset_sim()
         obs = self._get_obs()
+        self._reset_sim()
         rospy.logdebug("END Reseting RobotGazeboEnvironment")
         return obs
 

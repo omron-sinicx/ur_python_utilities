@@ -514,6 +514,14 @@ def convert_wrench(wrench_force, pose):
 
     return wrench
 
+def convert_twist(twist, transform):
+    transform[:3,3] = np.zeros(3)
+    # # # twist transformation
+    aTb = tr.inverse_matrix(transform)
+    twts = motion_frame_transform(aTb).T
+    transformed_twist = np.dot(twts, twist)
+
+    return transformed_twist
 
 def face_towards(target_position, current_pose, up_vector=[0, 0, 1]):
     """
