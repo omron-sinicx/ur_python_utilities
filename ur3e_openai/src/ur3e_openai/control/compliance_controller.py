@@ -28,6 +28,7 @@ import numpy as np
 
 from ur3e_openai.control import controller
 from ur_control import transformations
+from ur_control.constants import ExecutionResult
 
 
 class ComplianceController(controller.Controller):
@@ -36,6 +37,7 @@ class ComplianceController(controller.Controller):
                  n_actions):
         controller.Controller.__init__(self, arm, agent_control_dt, robot_control_dt, n_actions)
         self.added_motion_command = np.zeros(6)
+        self.rate = rospy.Rate(int(1.0/self.agent_control_dt))
 
     def start(self):
         self.ur3e_arm.activate_cartesian_controller()
@@ -59,6 +61,9 @@ class ComplianceController(controller.Controller):
             rospy.logerr("Invalid NAN action(s)" + str(action))
             sys.exit()
         assert np.all(action >= -1.0001) and np.all(action <= 1.0001)
+
+        if not self.check_contact_force_limits():
+            return ExecutionResult.FORCE_TORQUE_EXCEEDED
 
         # ensure that we don't change the action outside of this scope
         actions = np.copy(action)
@@ -95,10 +100,10 @@ class ComplianceController(controller.Controller):
             # limit the action to a max delta translation/rotation (m/s or less)
             x_cmd = np.interp(actions[4], [-1, 1], [-1.0*twist_limit[0], twist_limit[0]])
             z_cmd = np.interp(actions[5], [-1, 1], [-1.0*twist_limit[0], twist_limit[0]])
-            ay_cmd = np.interp(actions[6], [-1, 1], [-1.0*twist_limit[1], twist_limit[1]])
+            # ay_cmd = np.interp(actions[6], [-1, 1], [-1.0*twist_limit[1], twist_limit[1]])
             self.added_motion_command[0] += x_cmd  # translation in x
-            self.added_motion_command[2] -= z_cmd  # translation in z
-            self.added_motion_command[4] += ay_cmd  # rotation in ay
+            self.added_motion_command[2] += z_cmd  # translation in z
+            # self.added_motion_command[4] += ay_cmd  # rotation in ay
 
             target_pose = transformations.transform_pose(target_pose, self.added_motion_command, rotated_frame=False)
 
@@ -106,13 +111,16 @@ class ComplianceController(controller.Controller):
             raise ValueError("Invalid action_type %s" % action_type)
 
         ## go to a defined target pose ###
-        return self.ur3e_arm.execute_compliance_control(trajectory=target_pose,
-                                                        target_wrench=target_wrench,
-                                                        max_force_torque=self.max_force_torque,
-                                                        duration=self.agent_control_dt,
-                                                        auto_stop=False,
-                                                        scale_up_error=True,
-                                                        max_scale_error=2.5)  # 0.05
+        self.ur3e_arm.set_cartesian_target_pose(target_pose)
+        self.ur3e_arm.set_cartesian_target_wrench(target_wrench)
+        self.rate.sleep()
+        # return self.ur3e_arm.execute_compliance_control(trajectory=target_pose,
+        #                                                 target_wrench=target_wrench,
+        #                                                 max_force_torque=self.max_force_torque,
+        #                                                 duration=self.agent_control_dt,
+        #                                                 auto_stop=False,
+        #                                                 scale_up_error=True,
+        #                                                 max_scale_error=2.5)  # 0.05
 
     def set_parallel_parameters(self, actions):
         selection_matrix = np.interp(actions[:6], [-1, 1], [0, 1])
@@ -188,3 +196,16 @@ class ComplianceController(controller.Controller):
 
     def compute_target_wrench(self):
         return self.desired_force_torque
+
+    def check_contact_force_limits(self):
+        """
+            Check that contact force limits are not violated.
+            Returns False if the limits are violated, 
+            otherwise return True
+        """
+        # Safety limits: max force
+        current_wrench = self.ur3e_arm.get_wrench()
+        if np.any(np.greater(np.abs(current_wrench), self.max_force_torque)):
+            rospy.logerr('Maximum force/torque exceeded {}'.format(np.round(current_wrench, 3)))
+            return False
+        return True

@@ -7,12 +7,13 @@ import numpy as np
 
 from ur3e_openai.robot_envs.utils import get_board_color
 from ur3e_openai.task_envs.ur3e_force_control import UR3eForceControlEnv
-from ur_control import conversions, spalg, transformations
-from ur_control.constants import FORCE_TORQUE_EXCEEDED
+from ur_control import transformations
+from ur_control.constants import ExecutionResult
 from ur_gazebo.basic_models import get_button_model
 from ur_gazebo.model import Model
 
 import threading
+
 
 def get_cl_range(range, curriculum_level):
     return [range[0], range[0] + (range[1] - range[0]) * curriculum_level]
@@ -132,8 +133,8 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
             idx = self.np_random.choice(np.arange(len(self.object_properties)))
             erp, cfm = self.object_properties[idx]
             erp += self.np_random.uniform(low=-0.3, high=0.3)
-            colors = [[0.5,0.5,0.5,0.1],[0,1.,0,0.1],[205/255.,133/255.,63/255.,0.1],[1.,0,0,0.1]]
-            string_model = get_button_model(erp=erp, cfm=cfm, base_mass=2., color=[1.,0,0,0.1])
+            colors = [[0.5, 0.5, 0.5, 0.1], [0, 1., 0, 0.1], [205/255., 133/255., 63/255., 0.1], [1., 0, 0, 0.1]]
+            string_model = get_button_model(erp=erp, cfm=cfm, base_mass=2., color=[1., 0, 0, 0.1])
             self.box_model = Model("block", block_pose, file_type="string", string_model=string_model, model_id="target_block")
             self.spawner.reset_model(self.box_model)
         else:

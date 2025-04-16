@@ -6,7 +6,7 @@ import numpy as np
 
 from ur3e_openai.task_envs.ur3e_force_control import UR3eForceControlEnv
 from ur_control import spalg, transformations, conversions
-from ur_control.constants import FORCE_TORQUE_EXCEEDED
+from ur_control.constants import ExecutionResult
 import threading
 
 from std_srvs.srv import Empty
@@ -119,7 +119,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
     def _is_done(self, observations):
         pose_error = np.abs(observations[:len(self.target_dims)]*self.max_distance)
 
-        collision = self.action_result == FORCE_TORQUE_EXCEEDED
+        collision = self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED
         position_goal_reached = np.all(pose_error < self.goal_threshold)
         fail_on_reward = self.termination_on_negative_reward
         self.out_of_workspace = np.any(pose_error > self.workspace_limit)
@@ -164,7 +164,7 @@ class UR3eSlicingEnv(UR3eForceControlEnv):
 
     def _get_info(self, obs):
         return {"success": self.goal_reached,
-                "collision": self.action_result == FORCE_TORQUE_EXCEEDED,
+                "collision": self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED,
                 "dist": self.cumulated_dist,
                 "force": self.cumulated_force,
                 "jerk": self.cumulated_jerk,

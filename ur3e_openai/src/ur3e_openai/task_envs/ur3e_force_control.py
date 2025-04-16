@@ -130,7 +130,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
         self.completion_as_obs = rospy.get_param(prefix + "/completion_as_obs", False)
 
         self.target_dims = rospy.get_param(prefix + "/target_dims", [0, 1, 2, 3, 4, 5])
-        
+
         max_distance = rospy.get_param(prefix + "/max_distance", [0.05, 0.05, 0.05, 0.785398, 0.785398, 0.785398])
         max_velocity = rospy.get_param(prefix + "/max_velocity", [0.5, 0.5, 0.5, 0.785398, 0.785398, 0.785398])
 
@@ -174,10 +174,10 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
 
         self.termination_on_negative_reward = rospy.get_param(prefix + "/termination_on_negative_reward", False)
         self.termination_reward_threshold = rospy.get_param(prefix + "/termination_reward_threshold", -100)
-        
+
         self.use_dynamic_rewards = rospy.get_param(prefix + "/use_dynamic_rewards", False)
 
-        self.max_steps = rospy.get_param(prefix + "/max_steps", 50000)     
+        self.max_steps = rospy.get_param(prefix + "/max_steps", 50000)
 
     def _init_controller(self):
         """
@@ -256,7 +256,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
                         jerkiness_obs %s \n \
                         last_action %s \n \
                         reward_weights %s \n \
-                        force_torque %s" % (ee_points.shape, ee_velocities.shape, jerkiness_obs.shape, 
+                        force_torque %s" % (ee_points.shape, ee_velocities.shape, jerkiness_obs.shape,
                                             last_action.shape, reward_weights.shape, force_torque.shape))
 
         return obs.copy()
@@ -266,22 +266,28 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
         update the weights of the rewards following consecutive gaussian curves
         """
         x = self.total_steps / self.max_steps
-        sigma1, offset_start1, offset_end1 = 0.25, 0.1, 1.0 # 0.25, 0.1, 1.0 # To maintain the highest peak
+        sigma1, offset_start1, offset_end1 = 0.25, 0.1, 1.0  # 0.25, 0.1, 1.0 # To maintain the highest peak
         sigma2, offset_start2, offset_end2 = 0.25, 0.1, 1.0  # 0.25, 0.1, 1.0 # To maintain the highest peak
         sigma3, offset_start3, offset_end3 = 0.25, 0.1, 1.0  # 0.25, 0.1, 1.0 # To maintain the highest peak
-        
+
         # self.w_dist = self.mu1
         # self.w_force = self.mu2
         # self.w_jerk = self.mu3
         self.w_dist = np.exp((-(x-self.mu1)**2)/(2*sigma1**2))
         self.w_force = np.exp((-(x-self.mu2)**2)/(2*sigma2**2))
         self.w_jerk = np.exp((-(x-self.mu3)**2)/(2*sigma3**2))
-        if x > self.mu1 : self.w_dist = max(offset_end1, self.w_dist) 
-        elif x < self.mu1 : self.w_dist = max(offset_start1, self.w_dist) 
-        if x > self.mu2 : self.w_force = max(offset_end2, self.w_force) 
-        elif x < self.mu2 : self.w_force = max(offset_start2, self.w_force) 
-        if x > self.mu3 : self.w_jerk = max(offset_end3, self.w_jerk)
-        elif x < self.mu3 : self.w_jerk = max(offset_start3, self.w_jerk)  
+        if x > self.mu1:
+            self.w_dist = max(offset_end1, self.w_dist)
+        elif x < self.mu1:
+            self.w_dist = max(offset_start1, self.w_dist)
+        if x > self.mu2:
+            self.w_force = max(offset_end2, self.w_force)
+        elif x < self.mu2:
+            self.w_force = max(offset_start2, self.w_force)
+        if x > self.mu3:
+            self.w_jerk = max(offset_end3, self.w_jerk)
+        elif x < self.mu3:
+            self.w_jerk = max(offset_start3, self.w_jerk)
 
         # print([self.w_dist, self.w_force, self.w_jerk])
         return np.array([self.w_dist, self.w_force, self.w_jerk])
@@ -512,10 +518,10 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
             reward *= self.difficulty_ratio
 
         reward += 0.0 if not self.out_of_workspace else self.cost_collision
-        
+
         # self.reward_per_step.append(reward)
         # self.reward_details_per_step.append(reward_details)
-        
+
         return reward, reward_details
 
     def _is_done(self, observations):
@@ -532,7 +538,7 @@ class UR3eForceControlEnv(ur3e_env.UR3eEnv):
 
         done = (position_reached and orientation_reached) \
             or self.action_result == ExecutionResult.FORCE_TORQUE_EXCEEDED
-            
+
         if done:
             self.controller.stop()
         return done  # Stop on collision

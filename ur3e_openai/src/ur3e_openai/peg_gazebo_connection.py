@@ -30,7 +30,7 @@ from std_msgs.msg import Float64
 from gazebo_msgs.srv import SetPhysicsProperties, SetPhysicsPropertiesRequest
 from gazebo_msgs.srv import DeleteModel
 from gazebo_msgs.msg import ODEPhysics
-from gazebo_msgs.srv import StepControl, StepControlRequest
+# from gazebo_msgs.srv import StepControl, StepControlRequest
 from std_srvs.srv import Empty
 import rospy
 import roslaunch
@@ -38,6 +38,7 @@ import rospkg
 rospack = rospkg.RosPack()
 
 PEG_SHAPES = ["cylinder", "hexagon", "cuboid", "triangular", "trapezoid", "star"]
+
 
 class ConnectionBase():
     def pause(self):
@@ -75,8 +76,8 @@ class GazeboConnection(ConnectionBase):
         self.controllers_on = controllers_on
         self.controllers = ControllersConnection()
 
-        self.step_simulation_serv = rospy.ServiceProxy('/gazebo/step_control', StepControl)
-        self.step_simulation_serv.wait_for_service(1.0)
+        # self.step_simulation_serv = rospy.ServiceProxy('/gazebo/step_control', StepControl)
+        # self.step_simulation_serv.wait_for_service(1.0)
 
         self.unpause_serv = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
         self.pause_serv = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
@@ -92,16 +93,16 @@ class GazeboConnection(ConnectionBase):
         self.init_values()
 
         # self.pause()
-        self.step_simulation_serv(StepControlRequest(steps=0))
+        # self.step_simulation_serv(StepControlRequest(steps=0))
 
     def pause(self):
         rospy.logdebug("PAUSING START")
         rospy.wait_for_service('/gazebo/pause_physics')
-        try:
-            self.step_simulation_serv(StepControlRequest(steps=1))
-            # self.pause_serv()
-        except rospy.ServiceException:
-            print("/gazebo/pause_physics service call failed")
+        # try:
+        #     self.step_simulation_serv(StepControlRequest(steps=1))
+        #     # self.pause_serv()
+        # except rospy.ServiceException:
+        #     print("/gazebo/pause_physics service call failed")
 
         rospy.logdebug("PAUSING FINISH")
 
@@ -109,11 +110,11 @@ class GazeboConnection(ConnectionBase):
 
         rospy.logdebug("UNPAUSING START")
         rospy.wait_for_service('/gazebo/unpause_physics')
-        try:
-            self.step_simulation_serv(StepControlRequest(steps=0))
-            # self.unpause_serv()
-        except rospy.ServiceException:
-            print("/gazebo/unpause_physics service call failed")
+        # try:
+        #     self.step_simulation_serv(StepControlRequest(steps=0))
+        #     # self.unpause_serv()
+        # except rospy.ServiceException:
+        #     print("/gazebo/unpause_physics service call failed")
 
         rospy.logdebug("UNPAUSING FiNISH")
 
@@ -225,11 +226,11 @@ class GazeboConnection(ConnectionBase):
         """ Spawn a version of the robot with a specific gripper shaped peg """
         if peg_shape not in PEG_SHAPES:
             raise ValueError('Invalid peg shape: %s' % peg_shape)
-        
+
         self.launch = roslaunch.scriptapi.ROSLaunch()
         launch_filepath = rospack.get_path("ur_gripper_gazebo") + "/launch/ur_peg_alone.launch"
         # launch_filepath = rospack.get_path("ur3e_dual_gazebo") + "/launch/single_ur3e_peg_alone.launch"
-        
+
         cli_args = [launch_filepath, 'peg_shape:=%s' % peg_shape]
         roslaunch_args = cli_args[1:]
         roslaunch_file = [(roslaunch.rlutil.resolve_launch_arguments(cli_args)[0], roslaunch_args)]
@@ -247,8 +248,8 @@ class GazeboConnection(ConnectionBase):
         rospy.loginfo('Loading robot controllers')
         self.controllers.load_controllers(self.controllers_list)
         self.controllers.switch_controllers(controllers_on=self.controllers_on, controllers_off=[])
-        rospy.sleep(1) # give some time to load controllers
-        
+        rospy.sleep(1)  # give some time to load controllers
+
         rospy.loginfo('Finish loading')
 
     def unload_robot(self, robot_name='robot'):
@@ -258,9 +259,8 @@ class GazeboConnection(ConnectionBase):
         rospy.loginfo("Unloading robot's controllers")
         self.controllers.switch_controllers(controllers_off=self.controllers_on, controllers_on=[])
         self.controllers.unload_controllers(self.controllers_list)
-        
+
         rospy.loginfo("Unloading robot model")
         if self.launch:
             self.launch.stop()
         self.delete_model_srv(robot_name)
-        
