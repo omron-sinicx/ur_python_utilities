@@ -49,7 +49,7 @@ class UR3eEnv(robot_env.RobotGazeboEnv):
         # It doesn't use namespace
         self.robot_namespace = rospy.get_param("ur3e_gym/namespace", "")
         self.ee_link = rospy.get_param("ur3e_gym/ee_link", "gripper_tip_link")
-        
+
         reset_controls_bool = False
 
         # We launch the init function of the Parent Class robot_env.RobotGazeboEnv

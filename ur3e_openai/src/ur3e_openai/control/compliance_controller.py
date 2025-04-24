@@ -103,9 +103,11 @@ class ComplianceController(controller.Controller):
             # ay_cmd = np.interp(actions[6], [-1, 1], [-1.0*twist_limit[1], twist_limit[1]])
             self.added_motion_command[0] += x_cmd  # translation in x
             self.added_motion_command[2] += z_cmd  # translation in z
+            # self.added_motion_command[2] -= 0.005  # translation in z
             # self.added_motion_command[4] += ay_cmd  # rotation in ay
 
             target_pose = transformations.transform_pose(target_pose, self.added_motion_command, rotated_frame=False)
+            target_pose[2] = min(target[2], target_pose[2])
 
         else:
             raise ValueError("Invalid action_type %s" % action_type)
@@ -180,7 +182,7 @@ class ComplianceController(controller.Controller):
             Goal: optimize force control for speed and minimizing contact force
         """
         # w.r.t end effector link
-        stiff_x = np.interp(actions[0], [0, 1], [500, 4000])
+        stiff_x = np.interp(actions[0], [0, 1], [500, 5000])
         stiff_ay = np.interp(actions[1], [0, 1], [20, 100])
         stiff_act = np.array([stiff_x, 1000, 1000, 40, stiff_ay, 40], dtype=int)
 
