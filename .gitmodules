@@ -1,3 +1,0 @@
-[submodule "tf2rl"]
-	path = dependencies/tf2rl
-	url = https://github.com/cambel/tf2rl.git
