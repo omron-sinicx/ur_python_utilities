@@ -173,6 +173,7 @@ import numpy
 # from pyquaternion import Quaternion
 
 from ur_control.math_utils import *
+from pyquaternion import Quaternion
 
 # Documentation in HTML format can be generated with Epydoc
 __docformat__ = "restructuredtext en"
@@ -1165,6 +1166,12 @@ def pose_from_matrix(matrix):
     quat = rotation_matrix_from_quaternion(matrix)
     return numpy.concatenate((pose, quat), axis=0)
 
+def vector_to_pyquaternion(q):
+    """Convert quaternion, q, to pyQuaternion.
+    """
+    q_py = Quaternion(q[3], q[0], q[1], q[2])
+    
+    return q_py
 
 class Arcball(object):
     """Virtual Trackball Control.
