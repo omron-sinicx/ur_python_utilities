@@ -163,7 +163,7 @@ class Arm(object):
                 raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
         elif self.ik_solver == IKSolverType.TRAC_IK:
             try:
-                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.005, epsilon=1e-5, solve_type="Distance")
+                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.01, epsilon=5e-5, solve_type="Distance")
             except Exception as e:
                 rospy.logerr("Could not instantiate TRAC_IK" + str(e))
         elif self.ik_solver == IKSolverType.KDL:
@@ -193,7 +193,7 @@ class Arm(object):
             # Check that the FT topic is publishing
             if not utils.wait_for(lambda: self.current_ft_value is not None, timeout=2.0):
                 rospy.logerr('Timed out waiting for {0} topic'.format(ft_namespace))
-        
+
         if not rospy.has_param("use_gazebo_sim"):
             self._zero_ft = rospy.ServiceProxy('%s/ur_hardware_interface/zero_ftsensor' % self.ns, Trigger)
             self._zero_ft.wait_for_service(rospy.Duration(2.0))
