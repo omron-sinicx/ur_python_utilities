@@ -174,9 +174,9 @@ class ur_kinematics(object):
                                  end_frame)
         return frame_to_list(end_frame)
 
-    def forward_velocity_kinematics(self, joint_positions, joint_velocities, tip_link=None):
-        if not tip_link:
-            return self.forward_velocity_kinematics(joint_positions, joint_velocities, tip_link=self._tip_link)
+    def forward_velocity(self, joint_positions, joint_velocities, tip_link=None):
+        if not tip_link or tip_link == self._tip_link:
+            return self.forward_velocity_kinematics(joint_positions, joint_velocities)
 
         chain_key = f'{self._base_link}-{tip_link}'
         arm_chain = self.chain_dict.get(chain_key, None)
@@ -195,6 +195,21 @@ class ur_kinematics(object):
         kdl_joint_vel = PyKDL.JntArrayVel(q, qdot)
 
         fk_v_kdl.JntToCart(kdl_joint_vel, end_frame)
+
+        twist = end_frame.GetTwist()
+        return [twist.vel[0], twist.vel[1], twist.vel[2], twist.rot[0], twist.rot[1], twist.rot[2]]
+
+    def forward_velocity_kinematics(self, joint_positions, joint_velocities):
+        end_frame = PyKDL.FrameVel()
+
+        q = PyKDL.JntArray(self._num_jnts)
+        qdot = PyKDL.JntArray(self._num_jnts)
+        for idx in range(self._num_jnts):
+            q[idx] = joint_positions[idx]
+            qdot[idx] = joint_velocities[idx]
+        kdl_joint_vel = PyKDL.JntArrayVel(q, qdot)
+
+        self._fk_v_kdl.JntToCart(kdl_joint_vel, end_frame)
 
         twist = end_frame.GetTwist()
         return [twist.vel[0], twist.vel[1], twist.vel[2], twist.rot[0], twist.rot[1], twist.rot[2]]

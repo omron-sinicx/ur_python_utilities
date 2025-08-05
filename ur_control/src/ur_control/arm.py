@@ -304,6 +304,39 @@ class Arm(object):
         else:
             raise ValueError("Rotation Type not supported", rot_type)
 
+    def end_effector_velocity(self,
+                              joint_angles=None,
+                              joint_velocities=None,
+                              tip_link=None) -> np.ndarray:
+        """
+        Return the Cartesian velocity of the end-effector in the robot base frame (base_link).
+
+        Parameters
+        ----------
+        joint_angles : ndarray, optional
+            If not given, the current joint configuration will be used.
+            If provided, the joint configuration is expected in the order given by constants.JOINT_ORDER
+        joint_velocities : ndarray, optional
+            If not given, the current joint velocities will be used.
+            If provided, the joint velocities are expected in the order given by constants.JOINT_ORDER
+        tip_link : str, optional
+            Return the Cartesian velocity of the tip_link if provided.
+            Otherwise, use the default ee_link
+
+        Returns
+        -------
+        res : ndarray
+            The Cartesian velocity in the form of [vx, vy, vz, wx, wy, wz]
+            where vx,vy,vz are linear velocities and wx,wy,wz are angular velocities
+        """
+        joint_angles = self.joint_angles() if joint_angles is None else joint_angles
+        joint_velocities = self.joint_velocities() if joint_velocities is None else joint_velocities
+
+        # Compute the Jacobian matrix at current joint configuration
+        end_effector_vel = self.kdl.forward_velocity(joint_angles, joint_velocities, tip_link)
+
+        return end_effector_vel
+
     def joint_angle(self, joint: str) -> float:
         """
         Return the requested joint angle in radians.
