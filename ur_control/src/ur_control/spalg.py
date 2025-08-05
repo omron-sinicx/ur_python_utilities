@@ -1,9 +1,6 @@
-#! /usr/bin/env python
-import rospy
 import numpy as np
 import scipy.optimize
 import ur_control.transformations as tr
-from pyquaternion import Quaternion
 
 X_AXIS = np.array([1., 0., 0.])
 Y_AXIS = np.array([0., 1., 0.])
@@ -477,35 +474,6 @@ def transform_inv(T):
     return T_inv
 
 
-def quaternions_orientation_error(Qd, Qc):
-    """
-    Calculates the orientation error between two quaternions
-    Qd is the desired orientation
-    Qc is the current orientation
-    both with respect to the same fixed frame
-
-    return vector part
-    """
-    if isinstance(Qd, Quaternion) and isinstance(Qd, Quaternion):
-        # print("[1]", f"{Qd=}", f"{Qc=}")
-        # print("[1]", Qd.w, Qd.x, Qd.y, Qd.z, f"{Qd.scalar=}")
-        ne = Qc.scalar*Qd.scalar + np.dot(np.array(Qc.vector).T, Qd.vector)
-        ee = Qc.scalar*np.array(Qd.vector) - Qd.scalar*np.array(Qc.vector) + np.dot(skew(Qc.vector), Qd.vector)
-        ee *= np.sign(ne)  # disambiguate the sign of the quaternion
-        return ee
-    else:
-        assert isinstance(Qd, (list, np.ndarray)), "type: " + str(type(Qd))
-        assert isinstance(Qc, (list, np.ndarray)), "type: " + str(type(Qd))
-        q1 = Quaternion(np.roll(Qd, 1))
-        q2 = Quaternion(np.roll(Qc, 1))
-        return quaternions_orientation_error(q1, q2)
-
-
-def translation_rotation_error(to_pose, from_pose):
-    position_error = to_pose[:3] - from_pose[:3]
-    orientation_error = quaternions_orientation_error(to_pose[3:], from_pose[3:])
-    return np.concatenate((position_error, orientation_error))
-
 
 def convert_wrench(wrench_force, pose):
     ee_transform = tr.pose_to_transform(pose)
@@ -516,75 +484,6 @@ def convert_wrench(wrench_force, pose):
 
     return wrench
 
-
-def face_towards(target_position, current_pose, up_vector=[0, 0, 1]):
-    """
-        Compute orientation to "face towards" a point in space 
-        given the current position and the initial vector representing "up"
-        default is z as is the outward direction from the end-effector
-    """
-    cposition = current_pose[:3]
-    direction = tr.unit_vector(target_position-cposition)
-
-    cmd_rot = look_rotation(direction, up=up_vector)
-    target_quat = tr.vector_from_pyquaternion(cmd_rot)
-
-    return np.concatenate([cposition, target_quat])
-
-
-def look_rotation(forward, up=[0, 0, 1]):
-    forward = tr.unit_vector(forward)
-    right = tr.unit_vector(np.cross(up, forward))
-    up = np.cross(forward, right)
-    m00 = right[0]
-    m01 = right[1]
-    m02 = right[2]
-    m10 = up[0]
-    m11 = up[1]
-    m12 = up[2]
-    m20 = forward[0]
-    m21 = forward[1]
-    m22 = forward[2]
-
-    num8 = (m00 + m11) + m22
-    quaternion = Quaternion()
-    if (num8 > 0.0):
-
-        num = np.sqrt(num8 + 1)
-        quaternion[0] = num * 0.5
-        num = 0.5 / num
-        quaternion[1] = (m12 - m21) * num
-        quaternion[2] = (m20 - m02) * num
-        quaternion[3] = (m01 - m10) * num
-        return quaternion
-
-    if ((m00 >= m11) and (m00 >= m22)):
-
-        num7 = np.sqrt(((1 + m00) - m11) - m22)
-        num4 = 0.5 / num7
-        quaternion[1] = 0.5 * num7
-        quaternion[2] = (m01 + m10) * num4
-        quaternion[3] = (m02 + m20) * num4
-        quaternion[0] = (m12 - m21) * num4
-        return quaternion
-
-    if (m11 > m22):
-
-        num6 = np.sqrt(((1 + m11) - m00) - m22)
-        num3 = 0.5 / num6
-        quaternion[1] = (m10 + m01) * num3
-        quaternion[2] = 0.5 * num6
-        quaternion[3] = (m21 + m12) * num3
-        quaternion[0] = (m20 - m02) * num3
-        return quaternion
-
-    num5 = np.sqrt(((1 + m22) - m00) - m11)
-    num2 = 0.5 / num5
-    quaternion[1] = (m20 + m02) * num2
-    quaternion[2] = (m21 + m12) * num2
-    quaternion[3] = 0.5 * num5
-    quaternion[0] = (m01 - m10) * num2
-    return quaternion
 
 
 def jump_threshold(trajectory, dt, threshold):

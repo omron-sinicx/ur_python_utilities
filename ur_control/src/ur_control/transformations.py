@@ -170,7 +170,6 @@ True
 import math
 
 import numpy
-# from pyquaternion import Quaternion
 
 from ur_control.math_utils import *
 
@@ -1573,55 +1572,6 @@ def pose_from_angular_velocity_euler(pose, velocity, dt=1.0):
     pose_cmd[3:] = new_orientation
 
     return pose_cmd
-
-
-def pose_from_angular_velocity(pose, velocity, dt=1.0, rotated_frame=False):
-    """
-        Transform an action translation + euler [x, y, z, rx, ry, rz] into
-        translation(optional rotated) + quaternion [x, y, z, rx, ry, rz, w]
-        pose: list initial pose translation + quaternion
-        velocity: list aditional desired motion translation + euler
-        rotated_frame: boolean whether to return the rotated translation w.r.t
-                             the end effector
-    """
-    _pose = numpy.copy(pose)
-    translation = _pose[:3]
-    orientation = Quaternion(numpy.roll(_pose[3:], 1))
-    vel = numpy.copy(velocity)
-    lin_vel = vel[:3]
-    ang_vel = vel[3:]
-
-    pose_cmd = numpy.zeros_like(pose)
-    # Translation
-    if rotated_frame:
-        lin_vel[2] *= -1
-        lin_vel = orientation.rotate(lin_vel)
-        pose_cmd[:3] = translation + lin_vel*dt
-    else:
-        pose_cmd[:3] = translation + lin_vel*dt
-
-    # Rotation
-    new_orientation = integrateUnitQuaternionEuler(orientation, ang_vel, dt)
-
-    pose_cmd[3:] = numpy.roll(new_orientation.normalised.elements, -1)
-
-    return pose_cmd
-
-
-# def integrateUnitQuaternionDMM(q, w, dt):
-#     """ Integrate a unit quaterniong using the Direct Multiplicaiton Method"""
-#     w_norm = numpy.linalg.norm(w)
-#     if w_norm == 0:
-#         return q
-#     q_tmp = numpy.concatenate([numpy.sin(w_norm*dt/2)*w/w_norm, [numpy.cos(w_norm*dt/2.)]])
-#     return quaternion_multiply(q_tmp, q)
-
-
-# def integrateUnitQuaternionEuler(q, w, dt):
-#     """ Integrate a unit quaterniong using Euler Method"""
-#     q = Quaternion(q)
-#     qw = Quaternion(scalar=0, vector=w)
-#     return (q + 0.5*qw*dt*q).normalised
 
 
 def pose_to_transform(pose):

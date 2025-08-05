@@ -11,7 +11,8 @@ import sys
 import inspect
 from ur_control import transformations, spalg
 from sensor_msgs.msg import JointState
-from pyquaternion import Quaternion
+import quaternion
+
 
 def load_urdf_string(package, filename):
     rospack = rospkg.RosPack()
@@ -30,7 +31,7 @@ class PDRotation:
 
     def reset(self):
         self.last_time = rospy.get_rostime()
-        self.last_error = Quaternion()
+        self.last_error = np.quaternion(1, 0, 0, 0)
 
     def set_gains(self, kp=None, kd=None):
         if kp is not None:

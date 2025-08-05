@@ -180,9 +180,9 @@ def compute_trajectory(initial_pose, plane, radius, radius_direction, steps=100,
 
     if from_center:
         p1 = np.zeros(3)
-        p2 = target_orientation.rotate(initial_pose - final_pose)
+        p2 = transformations.quaternion_rotate_vector(target_orientation, initial_pose - final_pose)
     else:
-        p1 = target_orientation.rotate(initial_pose - final_pose)
+        p1 = transformations.quaternion_rotate_vector(target_orientation, initial_pose - final_pose)
         p2 = np.zeros(3)
 
     if trajectory_type == "circular":
@@ -194,7 +194,7 @@ def compute_trajectory(initial_pose, plane, radius, radius_direction, steps=100,
     else:
         rospy.logerr("Unsupported trajectory type: %s" % trajectory_type)
 
-    traj = np.apply_along_axis(target_orientation.rotate, 1, traj)
+    traj = np.apply_along_axis(transformations.quaternion_rotate_vector, 1, target_orientation, traj)
     trajectory = traj + final_pose
 
     if wiggle_direction is None:

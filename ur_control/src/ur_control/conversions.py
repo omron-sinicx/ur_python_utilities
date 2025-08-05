@@ -4,15 +4,11 @@ import numpy as np
 
 from ur_control import transformations as tr
 
-from ur_control import spalg
 # Messages
 from geometry_msgs.msg import (Point, Quaternion, Pose, PoseStamped, Vector3, Transform,
                                Wrench)
-from sensor_msgs.msg import CameraInfo, Image, RegionOfInterest
-from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
-from math import pi, cos, sin
+from sensor_msgs.msg import RegionOfInterest
 
-import pyquaternion
 
 # OpenRAVE types <--> Numpy types
 
@@ -291,48 +287,6 @@ def euler_transformation_matrix(euler):
     T = np.array([[1, 0, np.sin(p)], [0, np.cos(r), -np.sin(r) * np.cos(p)],
                   [0, np.sin(r), np.cos(r) * np.cos(p)]])
     return T
-
-
-def transform_end_effector(pose, extra_pose, rot_type='quaternion', inverse=False):
-    """
-    Transform end effector pose
-      pose: current pose [x, y, z, ax, ay, az, w]
-      extra_pose: additional transformation [x, y, z, ax, ay, az, w]
-      matrix: if true: return (translation, rotation matrix)
-              else: return translation + quaternion list
-    """
-    extra_translation = np.array(extra_pose[:3]).reshape(3, 1)
-    extra_rot = tr.vector_to_pyquaternion(extra_pose[3:]).rotation_matrix
-
-    c_trans = np.array(pose[:3]).reshape(3, 1)
-    c_rot = tr.vector_to_pyquaternion(pose[3:]).rotation_matrix
-    # BE CAREFUL!! Pose from KDL is ax ay az aw
-    #              Pose from IKfast is aw ax ay az
-
-    n_rot = np.matmul(c_rot, extra_rot)
-
-    if inverse:
-        n_trans = np.matmul(n_rot, extra_translation) + c_trans
-    else:
-        n_trans = np.matmul(c_rot, extra_translation) + c_trans
-
-    if rot_type == 'matrix':
-        return n_trans.flatten(), n_rot
-
-    quat_rot = np.roll(pyquaternion.Quaternion(matrix=n_rot).normalised.elements, -1)
-    if rot_type == 'euler':
-        euler = np.array(tr.euler_from_quaternion(quat_rot, axes='rxyz'))
-        return np.concatenate((n_trans.flatten(), euler))
-    elif rot_type == 'quaternion':
-        return np.concatenate((n_trans.flatten(), quat_rot))
-
-
-def inverse_transformation(pose, transform):
-    inv_ee_transform = np.copy(transform)
-    inv_ee_transform[:3] *= -1
-    inv_ee_transform[3:] = tr.quaternion_inverse(transform[3:])
-
-    return np.array(transform_end_effector(pose, inv_ee_transform, inverse=True))
 
 
 def to_float(val):
