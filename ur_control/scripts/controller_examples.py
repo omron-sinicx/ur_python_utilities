@@ -46,7 +46,15 @@ def move_joints(wait=True):
     # in t time (seconds)
     # wait is for waiting to finish the motion before executing
     # anything else or ignore and continue with whatever is next
-    arm.set_joint_positions(positions=q, wait=wait, target_time=0.5)
+    arm.set_joint_positions(positions=q, wait=wait, target_time=1.0)
+
+
+def move_joint_vel():
+    print("Moving joint velocities")
+    arm.activate_joint_velocity_controller()
+    arm.set_joint_velocities(velocities=[0.0, -0.01, 0.0, 0.0, 0.0, 0.0])
+    rospy.sleep(10.0)
+    print("Moving joint velocities done")
 
 
 def follow_trajectory():
@@ -185,6 +193,8 @@ def main():
     parser = argparse.ArgumentParser(description='Test force control')
     parser.add_argument('-m', '--move', action='store_true',
                         help='move to joint configuration')
+    parser.add_argument('-j', '--move_joint_vel', action='store_true',
+                        help='move to joint configuration with velocity interface')
     parser.add_argument('-t', '--move_traj', action='store_true',
                         help='move following a trajectory of joint configurations')
     parser.add_argument('-e', '--move_ee', action='store_true',
@@ -203,13 +213,19 @@ def main():
     rospy.init_node('ur3e_script_control')
 
     global arm
-    arm = Arm(gripper_type=GripperType.GENERIC)
+    arm = Arm(gripper_type=None,
+              use_velocity_interface=True,
+              robot_version="UR5e")
+
+    arm.activate_joint_trajectory_controller()
 
     real_start_time = timeit.default_timer()
     ros_start_time = rospy.get_time()
 
     if args.move:
         move_joints()
+    if args.move_joint_vel:
+        move_joint_vel()
     if args.move_traj:
         follow_trajectory()
     if args.move_ee:
@@ -222,6 +238,8 @@ def main():
         grasp_plugin()
     if args.circle:
         circular_trajectory()
+
+    arm.activate_joint_velocity_controller()
 
     print("real time", round(timeit.default_timer() - real_start_time, 3))
     print("ros time", round(rospy.get_time() - ros_start_time, 3))

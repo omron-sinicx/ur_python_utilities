@@ -30,7 +30,7 @@ import numpy as np
 
 from ur_control.arm import Arm
 from ur_control import conversions
-from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
+from ur_control.constants import CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
 from ur_control.fzi_utils import (
     is_more_extreme,
     convert_selection_matrix_to_parameters,
@@ -147,7 +147,7 @@ class CompliantController(Arm):
             bool: True if the controller was activated successfully, False otherwise
         """
         return self.controller_manager.switch_controllers(controllers_on=[CARTESIAN_COMPLIANCE_CONTROLLER],
-                                                          controllers_off=[JOINT_TRAJECTORY_CONTROLLER])
+                                                          controllers_off=[self.joint_traj_controller_name])
 
     def activate_joint_trajectory_controller(self):
         """
@@ -156,7 +156,7 @@ class CompliantController(Arm):
         Returns:
             bool: True if the controller was activated successfully, False otherwise
         """
-        return self.controller_manager.switch_controllers(controllers_on=[JOINT_TRAJECTORY_CONTROLLER],
+        return self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
                                                           controllers_off=[CARTESIAN_COMPLIANCE_CONTROLLER])
 
     def set_cartesian_target_wrench(self, wrench: list):
@@ -302,6 +302,7 @@ class CompliantController(Arm):
         """
         parameters = convert_selection_matrix_to_parameters(np.ones(6))
         parameters["stiffness"].update({"use_parallel_force_position_control": enable})
+        parameters["stiffness"].update({"use_selection_matrix_in_gripper_frame": enable})
         self.update_controller_parameters(parameters)
 
     def set_hand_frame_control(self, enable):

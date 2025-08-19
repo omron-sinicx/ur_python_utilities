@@ -32,9 +32,9 @@ from std_srvs.srv import Empty, SetBool, Trigger
 from ur_control import utils, spalg, conversions, transformations
 from ur_control.exceptions import InverseKinematicsException
 from ur_control.controllers_connection import ControllersConnection
-from ur_control.controllers import JointTrajectoryController
+from ur_control.controllers import JointTrajectoryController, JointVelocityController
 from ur_control.grippers import GripperController, RobotiqGripper
-from ur_control.constants import BASE_LINK, EE_LINK, JOINT_TRAJECTORY_CONTROLLER, FT_SUBSCRIBER,  \
+from ur_control.constants import BASE_LINK, EE_LINK,  FT_SUBSCRIBER,  \
     ExecutionResult, IKSolverType, GripperType, \
     get_arm_joint_names
 from ur_control.ur_services import URServices
@@ -59,7 +59,9 @@ class Arm(object):
                  ft_topic: str = None,
                  base_link: str = None,
                  ee_link: str = None,
-                 joint_names_prefix: str = None):
+                 joint_names_prefix: str = None,
+                 use_velocity_interface: bool = False,
+                 robot_version: str = "UR5e"):
         """ 
 
         Parameters
@@ -79,7 +81,10 @@ class Arm(object):
         joint_names_prefix: optional
             optionally specify a prefix when multiple robots are defined. For example,
             if 'a_bot' is defined, all joints will be consider like 'a_bot_link_name'
-
+        use_velocity_interface: optional
+            use velocity interface instead of position interface
+        robot_version: optional
+            robot version. Currently supported: 'UR5e'
         Raises
         ------
         ValueError
@@ -110,7 +115,9 @@ class Arm(object):
         cprint.ok("gripper: {}, ft_sensor_topic: {}, \nbase_link: {}, ee_link: {}"
                   .format(gripper_type, self.ft_topic, self.base_link, self.ee_link))
 
-        self.__init_controllers__(gripper_type, joint_names_prefix)
+        self.use_velocity_interface = use_velocity_interface
+
+        self.__init_controllers__(gripper_type, joint_names_prefix, robot_version)
         self.__init_ik_solver__(self.base_link, self.ee_link)
 
         self.__init_ft_sensor__()
@@ -123,15 +130,26 @@ class Arm(object):
 ### private methods ###
 
     def __on_shutdown__(self):
+        if self.use_velocity_interface:
+            # self.joint_vel_controller.stop_all_joints()
+            self.activate_joint_trajectory_controller()
         self.joint_traj_controller.stop()
 
-    def __init_controllers__(self, gripper_type, joint_names_prefix=None):
+    def __init_controllers__(self, gripper_type, joint_names_prefix=None, robot_version="UR5e"):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
 
-        self.joint_traj_controller = JointTrajectoryController(publisher_name=JOINT_TRAJECTORY_CONTROLLER,
+        self.joint_traj_controller_name = 'scaled_vel_joint_traj_controller' if self.use_velocity_interface else 'scaled_pos_joint_traj_controller'
+        self.joint_traj_controller = JointTrajectoryController(publisher_name=self.joint_traj_controller_name,
                                                                namespace=self.ns,
                                                                joint_names=self.joint_names,
                                                                timeout=1.0)
+
+        if self.use_velocity_interface:
+            self.joint_vel_controller = JointVelocityController(controller_name='joint_group_vel_controller',
+                                                                namespace=self.ns,
+                                                                joint_names=self.joint_names,
+                                                                robot_version=robot_version,
+                                                                timeout=1.0)
 
         self.gripper = None
 
@@ -163,7 +181,7 @@ class Arm(object):
                 raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
         elif self.ik_solver == IKSolverType.TRAC_IK:
             try:
-                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.01, epsilon=5e-5, solve_type="Distance")
+                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.1, epsilon=1e-5, solve_type="Distance")
             except Exception as e:
                 rospy.logerr("Could not instantiate TRAC_IK" + str(e))
         elif self.ik_solver == IKSolverType.KDL:
@@ -202,7 +220,33 @@ class Arm(object):
         self.current_ft_value = conversions.from_wrench(msg.wrench)
         self.wrench_queue.append(self.current_ft_value)
 
+    def activate_joint_velocity_controller(self):
+        """
+        Activate the joint velocity controller.
+
+        Returns:
+            bool: True if the controller was activated successfully, False otherwise
+        """
+        if not self.use_velocity_interface:
+            return
+        return self.controller_manager.switch_controllers(controllers_on=['joint_group_vel_controller'],
+                                                          controllers_off=[self.joint_traj_controller_name])
+
+    def activate_joint_trajectory_controller(self):
+        """
+        Activate the joint trajectory controller.
+
+        Returns:
+            bool: True if the controller was activated successfully, False otherwise
+        """
+        if not self.use_velocity_interface:
+            return
+        return self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
+                                                          controllers_off=['joint_group_vel_controller'])
+
+
 ### Data access methods ###
+
 
     def inverse_kinematics(self,
                            pose: np.ndarray,
@@ -251,7 +295,7 @@ class Arm(object):
                 return self.inverse_kinematics(pose, seed, attempts-1)
             if verbose:
                 rospy.logwarn(f"{self.ik_solver}: solution not found!")
-            raise InverseKinematicsException(f"{self.ik_solver}: solution not found!")
+            raise InverseKinematicsException(f"{self.ik_solver}: solution not found for pose {pose}!")
         return ik
 
     def end_effector(self,
@@ -461,7 +505,7 @@ class Arm(object):
         Returns
         -------
         res : bool
-            True if the trajectory is succesful when waiting for the execution to be 
+            True if the trajectory is successful when waiting for the execution to be 
             completed. Otherwise returns true if the trajectory was started.
         """
         self.joint_traj_controller.add_point(positions=positions,
@@ -481,11 +525,19 @@ class Arm(object):
             return ExecutionResult.DONE if res.error_code == 0 else ExecutionResult.CONTROLLER_FAILED
         return ExecutionResult.DONE
 
+    def set_joint_velocities(self,
+                             velocities: np.ndarray):
+        """
+        Set the joint velocities.
+        """
+        self.joint_vel_controller.set_joint_velocities(velocities)
+
     def set_joint_trajectory(self,
                              target_time: float,
                              trajectory: np.ndarray,
                              velocities: np.ndarray = None,
-                             accelerations: np.ndarray = None) -> ExecutionResult:
+                             accelerations: np.ndarray = None,
+                             wait: bool = False) -> ExecutionResult:
         """
         Start the joint trajectory controller with a multi-waypoint trajectory.
 
@@ -510,16 +562,22 @@ class Arm(object):
         """
         dt = target_time/len(trajectory)
 
-        for i, q in enumerate(trajectory):
-            self.joint_traj_controller.add_point(positions=q,
+        for i in range(len(trajectory)):
+            self.joint_traj_controller.add_point(positions=trajectory[i],
                                                  target_time=(i+1) * dt,
-                                                 velocities=velocities,
-                                                 accelerations=accelerations)
-        self.joint_traj_controller.start(delay=0, wait=True)
+                                                 velocities=velocities[i] if velocities is not None else None,
+                                                 accelerations=accelerations[i] if accelerations is not None else None)
+        if wait:
+            self.joint_traj_controller.start(delay=0, wait=True)
+        else:
+            self.joint_traj_controller.start_no_action_server()
+
         self.joint_traj_controller.clear_points()
 
-        res = self.joint_traj_controller.get_result()
-        return ExecutionResult.DONE if res.error_code == 0 else ExecutionResult.CONTROLLER_FAILED
+        if wait:
+            res = self.joint_traj_controller.get_result()
+            return ExecutionResult.DONE if res.error_code == 0 else ExecutionResult.CONTROLLER_FAILED
+        return ExecutionResult.DONE
 
     def set_target_pose(self,
                         target_time: float,

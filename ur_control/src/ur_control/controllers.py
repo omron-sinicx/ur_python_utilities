@@ -1,16 +1,30 @@
 #!/usr/bin/env python
+import os
+import rospkg
+import yaml
 import actionlib
 import copy
 import collections
 import rospy
 from ur_control import utils, constants
 import numpy as np
-from std_msgs.msg import Float64
+import math
+from std_msgs.msg import Float64, Float64MultiArray
 from controller_manager_msgs.srv import ListControllers
 # Joint trajectory action
 from sensor_msgs.msg import JointState
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 from control_msgs.msg import FollowJointTrajectoryAction, FollowJointTrajectoryGoal, FollowJointTrajectoryResult
+
+
+def degrees_constructor(loader, node):
+    """Custom YAML constructor for !degrees tag that converts degrees to radians."""
+    value = loader.construct_scalar(node)
+    return math.radians(float(value))
+
+
+# Register the custom constructor with the YAML loader
+yaml.SafeLoader.add_constructor('!degrees', degrees_constructor)
 
 
 class JointControllerBase(object):
@@ -200,6 +214,196 @@ class JointPositionController(JointControllerBase):
         @return: True if the joint command is valid
         """
         return (len(command) == self._num_joints)
+
+
+class JointVelocityController(JointControllerBase):
+    """
+    Interface class to control the UR robot using a Joint Velocity Control approach. 
+    """
+
+    def __init__(self, controller_name='joint_group_vel_controller', namespace='', timeout=5.0, joint_names=None, robot_version=None):
+        """
+        C{JointPositionController} constructor. It creates the required publishers for controlling 
+        the UR robot. Given that it inherits from C{JointControllerBase} it subscribes 
+        to C{joint_states} by default.
+        @type namespace: string
+        @param namespace: Override ROS namespace manually. Useful when controlling several robots 
+        from the same node.
+        @type  timeout: float
+        @param timeout: Time in seconds that will wait for the controller
+        """
+        super(JointVelocityController, self).__init__(namespace, timeout=timeout, joint_names=joint_names)
+        if not hasattr(self, '_joint_names'):
+            raise rospy.ROSException('JointVelocityController timed out waiting joint_states topic: {0}'.format(namespace))
+
+        # Publisher for velocity commands
+        # Topic name follows the pattern: /<controller_name>/command
+        self.controller_name = controller_name
+        self.velocity_pub = rospy.Publisher(f'/{self.controller_name}/command', Float64MultiArray, queue_size=1)
+
+        # Initialize joint limits
+        rospkg
+        self.joint_limits = self._load_joint_limits(robot_version)
+
+        # Wait for the joint velocity controllers
+        self._check_controller_status()
+        rospy.loginfo('JointVelocityController initialized. ns: {0}'.format(namespace))
+
+    def _check_controller_status(self):
+        """Check if the velocity controller is loaded and running."""
+        try:
+            rospy.wait_for_service('/controller_manager/list_controllers', timeout=2.0)
+            list_controllers = rospy.ServiceProxy('/controller_manager/list_controllers', ListControllers)
+
+            response = list_controllers()
+
+            controller_found = False
+            controller_running = False
+
+            for controller in response.controller:
+                if controller.name == self.controller_name:
+                    controller_found = True
+                    controller_running = (controller.state == 'running')
+                    break
+
+            if not controller_found:
+                rospy.logwarn(f"Controller '{self.controller_name}' not found. Available controllers:")
+                for controller in response.controller:
+                    rospy.logwarn(f"  - {controller.name} ({controller.state})")
+            elif not controller_running:
+                rospy.logwarn(f"Controller '{self.controller_name}' found but not running (state: {controller.state})")
+            else:
+                rospy.loginfo(f"Controller '{self.controller_name}' is running")
+
+        except Exception as e:
+            rospy.logwarn(f"Could not check controller status: {e}")
+
+    def _load_joint_limits(self, robot_version=None):
+        """Load joint limits from YAML file."""
+        # Try to find the default UR5e joint limits file
+        try:
+            rospack = rospkg.RosPack()
+            ur_desc_path = rospack.get_path('ur_description')
+            joint_limits_file = os.path.join(ur_desc_path, 'config', robot_version, 'joint_limits.yaml')
+        except Exception as e:
+            rospy.logwarn(f"Could not find ur_description package: {e}")
+            return self._get_default_limits()
+
+        try:
+            with open(joint_limits_file, 'r') as f:
+                limits_data = yaml.safe_load(f)
+
+            joint_limits = {}
+            for joint_name in self._joint_names:
+                # Remove '_joint' suffix to match YAML keys
+                yaml_key = joint_name.replace('_joint', '').replace('_', '_')
+                if yaml_key == 'shoulder_pan':
+                    yaml_key = 'shoulder_pan'
+                elif yaml_key == 'shoulder_lift':
+                    yaml_key = 'shoulder_lift'
+                elif yaml_key == 'elbow':
+                    yaml_key = 'elbow_joint'
+                elif yaml_key.startswith('wrist'):
+                    yaml_key = yaml_key.replace('_', '_')
+
+                if yaml_key in limits_data['joint_limits']:
+                    limits = limits_data['joint_limits'][yaml_key]
+                    joint_limits[joint_name] = {
+                        'min_position': limits.get('min_position', math.radians(-360.0)),
+                        'max_position': limits.get('max_position', math.radians(360.0)),
+                        'max_velocity': limits.get('max_velocity', math.radians(180.0)),
+                        'max_effort': limits.get('max_effort', 150.0)
+                    }
+                else:
+                    rospy.logwarn(f"Joint {joint_name} not found in limits file, using defaults")
+                    joint_limits[joint_name] = self._get_default_limits()[joint_name]
+
+            rospy.loginfo("Successfully loaded joint limits from YAML file")
+            return joint_limits
+
+        except Exception as e:
+            rospy.logwarn(f"Failed to load joint limits from {joint_limits_file}: {e}")
+            return self._get_default_limits()
+
+    def _get_default_limits(self):
+        """Get default joint limits if YAML file is not available."""
+        return {
+            'shoulder_pan_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'shoulder_lift_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'elbow_joint': {
+                'min_position': np.radians(-180.0),
+                'max_position': np.radians(180.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'wrist_1_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            },
+            'wrist_2_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            },
+            'wrist_3_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            }
+        }
+
+    def set_joint_velocities(self, jnt_velocities):
+        """
+        Sets the joint velocities of the robot. The values are send directly to the robot.
+        @type jnt_velocities: list
+        @param jnt_velocities: Joint velocities command.
+        """
+        if len(jnt_velocities) != 6:
+            rospy.logerr("Velocity command must have exactly 6 values")
+            return
+
+        # Apply velocity limits
+        vel_array = self._enforce_velocity_limits(jnt_velocities)
+
+        # Create and publish message
+        msg = Float64MultiArray()
+        msg.data = vel_array
+
+        self.velocity_pub.publish(msg)
+        rospy.logdebug(f"Sent velocities: {vel_array}")
+
+    def _enforce_velocity_limits(self, velocities):
+        """Enforce velocity limits on the command."""
+        limited_velocities = velocities.copy()
+
+        for i, (joint_name, vel) in enumerate(zip(self._joint_names, velocities)):
+            max_vel = self.joint_limits[joint_name]['max_velocity']
+
+            if abs(vel) > max_vel:
+                limited_vel = np.sign(vel) * max_vel
+                rospy.logwarn_throttle(1.0,
+                                       f"Joint {joint_name} velocity limited from {vel:.3f} to {limited_vel:.3f} rad/s")
+                limited_velocities[i] = limited_vel
+
+        return limited_velocities
+
+    def stop_all_joints(self):
+        """Stop all joint motion immediately."""
+        self.set_joint_velocities([0.0] * 6)
 
 
 class JointTrajectoryController(JointControllerBase):

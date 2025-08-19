@@ -45,6 +45,7 @@ class ControllersConnection():
         except:
             pass
         rospy.logerr("Controller %s not found" % controller_name)
+        raise ValueError(f"Controller {controller_name} not found")
         return None
 
     def load_controllers(self, controllers_list):
