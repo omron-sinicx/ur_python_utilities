@@ -30,7 +30,7 @@ import numpy as np
 
 from ur_control.arm import Arm
 from ur_control import conversions
-from ur_control.constants import CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
+from ur_control.constants import CARTESIAN_COMPLIANCE_CONTROLLER, JOINT_POSITION_TRAJECTORY_CONTROLLER, ExecutionResult
 from ur_control.fzi_utils import (
     is_more_extreme,
     convert_selection_matrix_to_parameters,
@@ -147,7 +147,7 @@ class CompliantController(Arm):
             bool: True if the controller was activated successfully, False otherwise
         """
         return self.controller_manager.switch_controllers(controllers_on=[CARTESIAN_COMPLIANCE_CONTROLLER],
-                                                          controllers_off=[self.joint_traj_controller_name])
+                                                          controllers_off=[JOINT_POSITION_TRAJECTORY_CONTROLLER])
 
     def activate_joint_trajectory_controller(self):
         """
@@ -156,7 +156,7 @@ class CompliantController(Arm):
         Returns:
             bool: True if the controller was activated successfully, False otherwise
         """
-        return self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
+        return self.controller_manager.switch_controllers(controllers_on=[JOINT_POSITION_TRAJECTORY_CONTROLLER],
                                                           controllers_off=[CARTESIAN_COMPLIANCE_CONTROLLER])
 
     def set_cartesian_target_wrench(self, wrench: list):
@@ -343,31 +343,6 @@ class CompliantController(Arm):
         if publish_state_feedback:
             parameters["solver"].update({"publish_state_feedback": publish_state_feedback})
         self.update_controller_parameters(parameters)
-
-    def wait_for_robot_to_stop(self, wait_time=5):
-        """
-        Wait for the robot to stop moving.
-
-        Args:
-            wait_time (float, optional): The maximum time to wait in seconds. Defaults to 5.
-        """
-        remaining_time = wait_time
-        start_time = rospy.get_time()
-
-        prev_state = self.joint_angles()
-
-        no_motion_count = 0
-
-        rate = rospy.Rate(500)
-
-        while remaining_time > 0 and no_motion_count < 3:
-            rate.sleep()
-            remaining_time = wait_time - (rospy.get_time() - start_time)
-            curr_state = self.joint_angles()
-            if np.allclose(prev_state, curr_state, atol=0.0001):
-                no_motion_count += 1
-            else:
-                no_motion_count = 0
 
     @switch_cartesian_controllers
     def execute_compliance_control(self, trajectory: np.array, target_wrench: np.array, max_force_torque: list,

@@ -24,7 +24,7 @@
 
 import numpy as np
 import rospy
-from ur_control.constants import JOINT_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
+from ur_control.constants import JOINT_POSITION_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
 
 
 def is_more_extreme(value, target):

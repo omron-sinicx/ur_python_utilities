@@ -34,7 +34,7 @@ from ur_control.exceptions import InverseKinematicsException
 from ur_control.controllers_connection import ControllersConnection
 from ur_control.controllers import JointTrajectoryController, JointVelocityController
 from ur_control.grippers import GripperController, RobotiqGripper
-from ur_control.constants import BASE_LINK, EE_LINK,  FT_SUBSCRIBER,  \
+from ur_control.constants import BASE_LINK, CARTESIAN_COMPLIANCE_CONTROLLER, EE_LINK,  FT_SUBSCRIBER, JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, VELOCITY_CONTROLLER_NAME,  \
     ExecutionResult, IKSolverType, GripperType, \
     get_arm_joint_names
 from ur_control.ur_services import URServices
@@ -117,13 +117,13 @@ class Arm(object):
 
         self.use_velocity_interface = use_velocity_interface
 
+        self.controller_manager = ControllersConnection(self.ns)
+        self.dashboard_services = URServices(self.ns)
+
         self.__init_controllers__(gripper_type, joint_names_prefix, robot_version)
         self.__init_ik_solver__(self.base_link, self.ee_link)
 
         self.__init_ft_sensor__()
-
-        self.controller_manager = ControllersConnection(self.ns)
-        self.dashboard_services = URServices(self.ns)
 
         rospy.on_shutdown(self.__on_shutdown__)
 
@@ -138,14 +138,21 @@ class Arm(object):
     def __init_controllers__(self, gripper_type, joint_names_prefix=None, robot_version="UR5e"):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
 
-        self.joint_traj_controller_name = 'scaled_vel_joint_traj_controller' if self.use_velocity_interface else 'scaled_pos_joint_traj_controller'
+        if self.use_velocity_interface:
+            self.controller_manager.switch_controllers(controllers_on=[JOINT_VELOCITY_TRAJECTORY_CONTROLLER],
+                                                       controllers_off=[JOINT_POSITION_TRAJECTORY_CONTROLLER])
+        else:
+            self.controller_manager.switch_controllers(controllers_on=[JOINT_POSITION_TRAJECTORY_CONTROLLER],
+                                                       controllers_off=[JOINT_VELOCITY_TRAJECTORY_CONTROLLER])
+
+        self.joint_traj_controller_name = JOINT_VELOCITY_TRAJECTORY_CONTROLLER if self.use_velocity_interface else JOINT_POSITION_TRAJECTORY_CONTROLLER
         self.joint_traj_controller = JointTrajectoryController(publisher_name=self.joint_traj_controller_name,
                                                                namespace=self.ns,
                                                                joint_names=self.joint_names,
                                                                timeout=1.0)
 
         if self.use_velocity_interface:
-            self.joint_vel_controller = JointVelocityController(controller_name='joint_group_vel_controller',
+            self.joint_vel_controller = JointVelocityController(controller_name=VELOCITY_CONTROLLER_NAME,
                                                                 namespace=self.ns,
                                                                 joint_names=self.joint_names,
                                                                 robot_version=robot_version,
@@ -229,7 +236,7 @@ class Arm(object):
         """
         if not self.use_velocity_interface:
             return
-        return self.controller_manager.switch_controllers(controllers_on=['joint_group_vel_controller'],
+        return self.controller_manager.switch_controllers(controllers_on=[VELOCITY_CONTROLLER_NAME],
                                                           controllers_off=[self.joint_traj_controller_name])
 
     def activate_joint_trajectory_controller(self):
@@ -242,11 +249,10 @@ class Arm(object):
         if not self.use_velocity_interface:
             return
         return self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
-                                                          controllers_off=['joint_group_vel_controller'])
+                                                          controllers_off=[VELOCITY_CONTROLLER_NAME])
 
 
 ### Data access methods ###
-
 
     def inverse_kinematics(self,
                            pose: np.ndarray,
@@ -673,6 +679,38 @@ class Arm(object):
         """
         new_pose = transformations.transform_pose(self.end_effector(), transformation, rotated_frame=relative_to_tcp)
         return self.set_target_pose(pose=new_pose, target_time=target_time, wait=wait)
+
+    def wait_for_robot_to_stop(self, wait_time=5):
+        """
+        Wait for the robot to stop moving.
+
+        Args:
+            wait_time (float, optional): The maximum time to wait in seconds. Defaults to 5.
+        """
+        remaining_time = wait_time
+        start_time = rospy.get_time()
+
+        prev_state = self.joint_angles()
+
+        no_motion_count = 0
+
+        rate = rospy.Rate(100)
+
+        while remaining_time > 0 and no_motion_count < 3:
+            rate.sleep()
+            remaining_time = wait_time - (rospy.get_time() - start_time)
+            curr_state = self.joint_angles()
+            if np.allclose(prev_state, curr_state, atol=0.0001):
+                no_motion_count += 1
+            else:
+                no_motion_count = 0
+
+    def stop_robot(self):
+        if self.use_velocity_interface:
+            self.set_joint_velocities(velocities=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
+            self.wait_for_robot_to_stop()
+        else:
+            self.set_joint_positions(positions=self.joint_angles(), target_time=0.1, wait=True)
 
 ### FT sensor control ###
 

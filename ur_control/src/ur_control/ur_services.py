@@ -192,7 +192,7 @@ class URServices():
             rospy.sleep(1)
         return response.success
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def activate_ros_control_on_ur(self, recursion_depth=0):
         if not self.use_real_robot:
             return True
@@ -208,6 +208,7 @@ class URServices():
 
         # Check if URCap is already running on UR
         if self.wait_for_control_status_to_turn_on(1.0):
+            print("Robot program is running")
             return True
         else:
             rospy.loginfo("Robot program not running for " + self.ns)
@@ -249,7 +250,7 @@ class URServices():
             self.reset_connection()
             return self.activate_ros_control_on_ur(recursion_depth=recursion_depth+1)
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def check_loaded_program(self):
         try:
             # Load program if it not loaded already
@@ -277,7 +278,7 @@ class URServices():
             rospy.logwarn("Dashboard service did not respond!")
         return False
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def check_for_dead_controller_and_force_start(self):
         list_req = controller_manager_msgs.srv.ListControllersRequest()
         switch_req = controller_manager_msgs.srv.SwitchControllerRequest()
@@ -297,7 +298,7 @@ class URServices():
                     rospy.loginfo("Controller state is " + c.state + ", returning True.")
                     return True
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def load_and_execute_program(self, program_name="", recursion_depth=0, skip_ros_activation=False):
         if not skip_ros_activation:
             self.activate_ros_control_on_ur()
@@ -305,7 +306,7 @@ class URServices():
             return False
         return self.execute_loaded_program()
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def load_program(self, program_name="", recursion_depth=0):
         if not self.use_real_robot:
             return True
@@ -354,7 +355,7 @@ class URServices():
             rospy.sleep(.5)
             return self.load_program(program_name=program_name, recursion_depth=recursion_depth+1)
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def execute_loaded_program(self):
         # Run the program
         try:
@@ -369,7 +370,7 @@ class URServices():
             rospy.logerr(str(e))
             return False
 
-    @ check_for_real_robot
+    @check_for_real_robot
     def close_ur_popup(self):
         # Close a popup on the teach pendant to continue program execution
         response = self.ur_dashboard_clients["close_popup"].call(std_srvs.srv.TriggerRequest())
