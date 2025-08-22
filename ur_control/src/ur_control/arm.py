@@ -694,9 +694,9 @@ class Arm(object):
 
         no_motion_count = 0
 
-        rate = rospy.Rate(100)
+        rate = rospy.Rate(500)
 
-        while remaining_time > 0 and no_motion_count < 3:
+        while remaining_time > 0 and no_motion_count < 10:
             rate.sleep()
             remaining_time = wait_time - (rospy.get_time() - start_time)
             curr_state = self.joint_angles()
@@ -704,6 +704,7 @@ class Arm(object):
                 no_motion_count += 1
             else:
                 no_motion_count = 0
+                prev_state = curr_state.copy()
 
     def stop_robot(self):
         if self.use_velocity_interface:
