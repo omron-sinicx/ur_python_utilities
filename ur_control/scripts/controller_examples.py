@@ -40,7 +40,7 @@ np.set_printoptions(linewidth=np.inf)
 
 def move_joints(wait=True):
     # desired joint configuration 'q'
-    q = [1.8391, -1.5659, 1.4889, -1.6421, -1.6115, 0.2656]
+    q = [1.4235, -1.6807, 2.0693, -1.891, -1.5597, -0.1602]
 
     # go to desired joint configuration
     # in t time (seconds)
@@ -214,7 +214,7 @@ def main():
 
     global arm
     arm = Arm(gripper_type=None,
-              use_velocity_interface=True,
+              use_velocity_interface=False,
               robot_version="UR5e")
 
     arm.activate_joint_trajectory_controller()
