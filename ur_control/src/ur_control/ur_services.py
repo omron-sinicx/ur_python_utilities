@@ -208,7 +208,7 @@ class URServices():
 
         # Check if URCap is already running on UR
         if self.wait_for_control_status_to_turn_on(1.0):
-            print("Robot program is running")
+            rospy.logdebug("Robot program is running")
             return True
         else:
             rospy.loginfo("Robot program not running for " + self.ns)

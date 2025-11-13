@@ -75,7 +75,7 @@ class ControllersConnection():
         """
         controllers_to_switch = []
         for c in on_controllers:
-            if self.get_controller_state(c) != "running":
+            if c is not None and self.get_controller_state(c) != "running":
                 controllers_to_switch.append(c)
         return controllers_to_switch
 
@@ -85,9 +85,10 @@ class ControllersConnection():
         """
         controllers_to_switch = []
         for c in off_controllers:
-            state = self.get_controller_state(c)
-            if state == "running":
-                controllers_to_switch.append(c)
+            if c is not None:
+                state = self.get_controller_state(c)
+                if state == "running":
+                    controllers_to_switch.append(c)
         return controllers_to_switch
 
     def switch_controllers(self, controllers_on, controllers_off,
@@ -139,13 +140,12 @@ class ControllersConnection():
                         break
                 if all_running:
                     break
-
+            rospy.sleep(1.0)  # wait for the controller to be fully activated
             return switch_result.ok
 
         except Exception as e:
             rospy.logerr("Switch controllers service call failed: %s" % e)
-
-            return None
+            return False
 
     def reset_controllers(self):
         """

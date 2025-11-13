@@ -243,40 +243,10 @@ class JointVelocityController(JointControllerBase):
 
         # Initialize joint limits
         rospkg
-        self.joint_limits = self._load_joint_limits(robot_version)
+        self.joint_limits = self._load_joint_limits(robot_version.lower())
 
         # Wait for the joint velocity controllers
-        self._check_controller_status()
         rospy.loginfo('JointVelocityController initialized. ns: {0}'.format(namespace))
-
-    def _check_controller_status(self):
-        """Check if the velocity controller is loaded and running."""
-        try:
-            rospy.wait_for_service('/controller_manager/list_controllers', timeout=2.0)
-            list_controllers = rospy.ServiceProxy('/controller_manager/list_controllers', ListControllers)
-
-            response = list_controllers()
-
-            controller_found = False
-            controller_running = False
-
-            for controller in response.controller:
-                if controller.name == self.controller_name:
-                    controller_found = True
-                    controller_running = (controller.state == 'running')
-                    break
-
-            if not controller_found:
-                rospy.logwarn(f"Controller '{self.controller_name}' not found. Available controllers:")
-                for controller in response.controller:
-                    rospy.logwarn(f"  - {controller.name} ({controller.state})")
-            elif not controller_running:
-                rospy.logwarn(f"Controller '{self.controller_name}' found but not running (state: {controller.state})")
-            else:
-                rospy.loginfo(f"Controller '{self.controller_name}' is running")
-
-        except Exception as e:
-            rospy.logwarn(f"Could not check controller status: {e}")
 
     def _load_joint_limits(self, robot_version=None):
         """Load joint limits from YAML file."""

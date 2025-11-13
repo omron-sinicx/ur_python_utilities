@@ -61,7 +61,8 @@ class Arm(object):
                  ee_link: str = None,
                  joint_names_prefix: str = None,
                  use_velocity_interface: bool = False,
-                 robot_version: str = "UR5e"):
+                 robot_version: str = "UR5e",
+                 skip_ros_control: bool = False):
         """ 
 
         Parameters
@@ -116,6 +117,7 @@ class Arm(object):
                   .format(gripper_type, self.ft_topic, self.base_link, self.ee_link))
 
         self.use_velocity_interface = use_velocity_interface
+        self.skip_ros_control = skip_ros_control
 
         self.controller_manager = ControllersConnection(self.ns)
         self.dashboard_services = URServices(self.ns)
@@ -138,12 +140,14 @@ class Arm(object):
     def __init_controllers__(self, gripper_type, joint_names_prefix=None, robot_version="UR5e"):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
 
-        if self.use_velocity_interface:
-            self.controller_manager.switch_controllers(controllers_on=[JOINT_VELOCITY_TRAJECTORY_CONTROLLER],
-                                                       controllers_off=[JOINT_POSITION_TRAJECTORY_CONTROLLER])
-        else:
-            self.controller_manager.switch_controllers(controllers_on=[JOINT_POSITION_TRAJECTORY_CONTROLLER],
-                                                       controllers_off=[JOINT_VELOCITY_TRAJECTORY_CONTROLLER])
+        self.running_controller_name = None
+        if not self.skip_ros_control:
+            if self.dashboard_services.activate_ros_control_on_ur():
+                in_conflict_controllers = [JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER]
+                for controller in in_conflict_controllers:
+                    if self.controller_manager.get_controller_state(controller) == "running":
+                        self.running_controller_name = controller
+                        break
 
         self.joint_traj_controller_name = JOINT_VELOCITY_TRAJECTORY_CONTROLLER if self.use_velocity_interface else JOINT_POSITION_TRAJECTORY_CONTROLLER
         self.joint_traj_controller = JointTrajectoryController(publisher_name=self.joint_traj_controller_name,
@@ -234,10 +238,13 @@ class Arm(object):
         Returns:
             bool: True if the controller was activated successfully, False otherwise
         """
-        if not self.use_velocity_interface:
-            return
-        return self.controller_manager.switch_controllers(controllers_on=[VELOCITY_CONTROLLER_NAME],
-                                                          controllers_off=[self.joint_traj_controller_name])
+        if not self.use_velocity_interface or self.running_controller_name == VELOCITY_CONTROLLER_NAME:
+            return True
+        if self.controller_manager.switch_controllers(controllers_on=[VELOCITY_CONTROLLER_NAME],
+                                                      controllers_off=[self.running_controller_name]):
+            self.running_controller_name = VELOCITY_CONTROLLER_NAME
+            return True
+        return False
 
     def activate_joint_trajectory_controller(self):
         """
@@ -246,10 +253,14 @@ class Arm(object):
         Returns:
             bool: True if the controller was activated successfully, False otherwise
         """
-        if not self.use_velocity_interface:
-            return
-        return self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
-                                                          controllers_off=[VELOCITY_CONTROLLER_NAME])
+        if self.running_controller_name == self.joint_traj_controller_name:
+            return True
+
+        if self.controller_manager.switch_controllers(controllers_on=[self.joint_traj_controller_name],
+                                                      controllers_off=[self.running_controller_name]):
+            self.running_controller_name = self.joint_traj_controller_name
+            return True
+        return False
 
 
 ### Data access methods ###
@@ -514,6 +525,7 @@ class Arm(object):
             True if the trajectory is successful when waiting for the execution to be 
             completed. Otherwise returns true if the trajectory was started.
         """
+        self.activate_joint_trajectory_controller()
         self.joint_traj_controller.add_point(positions=positions,
                                              velocities=velocities,
                                              accelerations=accelerations,
@@ -536,6 +548,7 @@ class Arm(object):
         """
         Set the joint velocities.
         """
+        self.activate_joint_velocity_controller()
         self.joint_vel_controller.set_joint_velocities(velocities)
 
     def set_joint_trajectory(self,

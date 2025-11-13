@@ -146,18 +146,14 @@ class CompliantController(Arm):
         Returns:
             bool: True if the controller was activated successfully, False otherwise
         """
-        return self.controller_manager.switch_controllers(controllers_on=[CARTESIAN_COMPLIANCE_CONTROLLER],
-                                                          controllers_off=[JOINT_POSITION_TRAJECTORY_CONTROLLER])
-
-    def activate_joint_trajectory_controller(self):
-        """
-        Activate the joint trajectory controller.
-
-        Returns:
-            bool: True if the controller was activated successfully, False otherwise
-        """
-        return self.controller_manager.switch_controllers(controllers_on=[JOINT_POSITION_TRAJECTORY_CONTROLLER],
-                                                          controllers_off=[CARTESIAN_COMPLIANCE_CONTROLLER])
+        if self.running_controller_name == CARTESIAN_COMPLIANCE_CONTROLLER:
+            return True
+        if self.controller_manager.switch_controllers(controllers_on=[CARTESIAN_COMPLIANCE_CONTROLLER],
+                                                      controllers_off=[self.running_controller_name]):
+            self.running_controller_name = CARTESIAN_COMPLIANCE_CONTROLLER
+            return True
+        raise Exception("Failed to activate cartesian compliance controller")
+        return False
 
     def set_cartesian_target_wrench(self, wrench: list):
         """
