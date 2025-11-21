@@ -91,9 +91,9 @@ def map_keyboard():
         arm.gripper.close()
 
     def move_gripper(delta):
-        cpose = arm.gripper.get_position()
+        cpose = arm.gripper.get_opening_percentage()
         cpose += delta
-        arm.gripper.command(cpose)
+        arm.gripper.percentage_command(cpose)
 
     global delta_q
     global delta_x
@@ -136,10 +136,10 @@ def map_keyboard():
         '7': (update_d, ['x', -0.0001], "delta_x decrease"),
 
         # Gripper
-        '5': (move_gripper, [0.005], "open gripper a bit"),
+        '5': (move_gripper, [0.05], "open gripper a bit"),
         't': (open_gripper, [], "open gripper"),
         'g': (close_gripper, [], "close gripper"),
-        'b': (move_gripper, [-0.005], "close gripper a bit"),
+        'b': (move_gripper, [-0.05], "close gripper a bit"),
     }
     done = False
     print("Controlling joints. Press ? for help, Esc to quit.")
@@ -185,7 +185,7 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--gripper', type=str, help='gripper type', default=None)
+        '--gripper', type=str, help='gripper type', default='robotiq')
     parser.add_argument(
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
@@ -208,7 +208,7 @@ See help inside the example with the '?' key for key bindings.
 
     global arm
     arm = Arm(namespace=args.namespace,
-              gripper_type=None,
+              gripper_type=gripper,
               joint_names_prefix=joints_prefix,
               ee_link=tcp_link)
 
