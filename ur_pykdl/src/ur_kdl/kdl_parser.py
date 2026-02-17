@@ -69,7 +69,7 @@ def _toKdlPose(pose):
 
 
 def urdf_joint_to_kdl_joint(jnt):
-    if kdl.__version__ >= '1.5.0':
+    if hasattr(kdl, '__version__') and kdl.__version__ >= '1.5.0':
         def fixed(j, F): return kdl.Joint(j.name, getattr(kdl.Joint, 'Fixed'))
     else:
         def fixed(j, F): return kdl.Joint(j.name, getattr(kdl.Joint, 'None'))
