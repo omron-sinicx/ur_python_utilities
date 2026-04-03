@@ -28,6 +28,7 @@
   <run_depend>joint_state_controller</run_depend>
   <run_depend>joint_trajectory_controller</run_depend>
   <run_depend>robot_state_publisher</run_depend>
+  <run_depend>spacenav_node</run_depend>
   <run_depend>std_srvs</run_depend>
   <run_depend>sensor_msgs</run_depend>
   <run_depend>trajectory_msgs</run_depend>

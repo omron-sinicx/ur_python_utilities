@@ -55,46 +55,16 @@ def print_robot_state():
     print("End Effector:", np.round(arm.end_effector(rot_type='euler'), 3).tolist())
 
 
-def spacemouse_wait_message():
-    return (
-        "Waiting for SpaceMouse input on %s and %s. "
-        "Start it with: roslaunch cartesian_controller_utilities spacenav.launch"
-        % (mouse6d.twist_topic, mouse6d.joy_topic)
-    )
-
-
-def wait_for_spacemouse_input(timeout=SPACEMOUSE_WAIT_TIMEOUT):
-    start_time = rospy.get_time()
-    rate = rospy.Rate(20)
-
-    while not rospy.is_shutdown() and (rospy.get_time() - start_time) < timeout:
-        if not mouse6d.twist_is_stale(timeout=SPACEMOUSE_STALE_TIMEOUT):
-            return True
-        rate.sleep()
-
-    return False
-
-
 def start_control():
     rate = rospy.Rate(125)
     target_time = 0.25
     delta_x = 0.01
     delta_q = np.deg2rad(1)
-    spacemouse_ready = False
 
     while not rospy.is_shutdown():
-        if mouse6d.twist_is_stale(timeout=SPACEMOUSE_STALE_TIMEOUT):
-            if spacemouse_ready:
-                rospy.logwarn("SpaceMouse input stopped. Waiting for new data.")
-                spacemouse_ready = False
-            rospy.logwarn_throttle(SPACEMOUSE_WARN_INTERVAL, spacemouse_wait_message())
+        if mouse6d.twist is None:
             rate.sleep()
             continue
-
-        if not spacemouse_ready:
-            rospy.loginfo("SpaceMouse input received on %s" % mouse6d.twist_topic)
-            print("Start moving.")
-            spacemouse_ready = True
 
         x = arm.end_effector()
         xd = np.array(mouse6d.twist, dtype=float)
@@ -167,7 +137,6 @@ Run `roslaunch cartesian_controller_utilities spacenav.launch` before starting t
     global mouse6d
     mouse6d = Mouse6D()
 
-    wait_for_spacemouse_input()
     start_control()
     print("Done.")
 
