@@ -28,7 +28,7 @@
 UR Joint Position Example: 3Dconnexion mouse
 
 requires ros-$ROS-VERSION-spacenav-node
-and to launch roslaunch spacenav_node classic.launch
+and to launch roslaunch cartesian_controller_utilities spacenav.launch
 #TODO launch automatically
 """
 import argparse
@@ -36,73 +36,138 @@ import argparse
 import rospy
 
 from ur_control.arm import Arm
+from ur_control.constants import GripperType
+from ur_control.exceptions import InverseKinematicsException
 from ur_control.mouse_6d import Mouse6D
 from ur_control import transformations
-
-from ur_ikfast import ur_kinematics
 
 import numpy as np
 
 np.set_printoptions(suppress=True)
-ur3e_arm = ur_kinematics.URKinematics('ur3e')
-mouse6d = Mouse6D()
 
-axes = 'rxyz'
-
-
-def e2q(e):
-    return transformations.quaternion_from_euler(e[0], e[1], e[2], axes=axes)
+SPACEMOUSE_STALE_TIMEOUT = 0.5
+SPACEMOUSE_WAIT_TIMEOUT = 1.0
+SPACEMOUSE_WARN_INTERVAL = 5.0
 
 
 def print_robot_state():
-    print(("Joint angles:", np.round(arm.joint_angles(), 3)))
-    print(("End Effector:", np.round(arm.end_effector(rot_type='euler'), 3)))
+    print("Joint angles:", np.round(arm.joint_angles(), 3).tolist())
+    print("End Effector:", np.round(arm.end_effector(rot_type='euler'), 3).tolist())
 
 
-def start_control(motion_type="linear"):
-    print("Start moving. type", motion_type)
+def spacemouse_wait_message():
+    return (
+        "Waiting for SpaceMouse input on %s and %s. "
+        "Start it with: roslaunch cartesian_controller_utilities spacenav.launch"
+        % (mouse6d.twist_topic, mouse6d.joy_topic)
+    )
+
+
+def wait_for_spacemouse_input(timeout=SPACEMOUSE_WAIT_TIMEOUT):
+    start_time = rospy.get_time()
+    rate = rospy.Rate(20)
+
+    while not rospy.is_shutdown() and (rospy.get_time() - start_time) < timeout:
+        if not mouse6d.twist_is_stale(timeout=SPACEMOUSE_STALE_TIMEOUT):
+            return True
+        rate.sleep()
+
+    return False
+
+
+def start_control():
     rate = rospy.Rate(125)
+    target_time = 0.25
     delta_x = 0.01
     delta_q = np.deg2rad(1)
+    spacemouse_ready = False
+
     while not rospy.is_shutdown():
+        if mouse6d.twist_is_stale(timeout=SPACEMOUSE_STALE_TIMEOUT):
+            if spacemouse_ready:
+                rospy.logwarn("SpaceMouse input stopped. Waiting for new data.")
+                spacemouse_ready = False
+            rospy.logwarn_throttle(SPACEMOUSE_WARN_INTERVAL, spacemouse_wait_message())
+            rate.sleep()
+            continue
+
+        if not spacemouse_ready:
+            rospy.loginfo("SpaceMouse input received on %s" % mouse6d.twist_topic)
+            print("Start moving.")
+            spacemouse_ready = True
+
         x = arm.end_effector()
-        xd = np.array(mouse6d.twist)
+        xd = np.array(mouse6d.twist, dtype=float)
 
         xd[:3] = [delta_x*np.sign(xd[i]) if abs(xd[i]) > 0.15 else 0.0 for i in range(3)]
         xd[3:] = [delta_q*np.sign(xd[3+i]) if abs(xd[3+i]) > 0.15 else 0.0 for i in range(3)]
-        if motion_type == "rotated":
-            xd[2] *= -1
-        elif motion_type == "linear":
-            pass
-        else:
-            print("motion_type not supported", motion_type)
-            break
 
-        x = transformations.pose_from_angular_velocity(x, xd, dt=0.25)
-        if mouse6d.joy_buttons[0] == 1:
+        if mouse6d.joy_buttons and mouse6d.joy_buttons[0] == 1:
             print_robot_state()
 
-        arm.set_target_pose_flex(pose=x, t=0.25)
+        if not np.any(xd):
+            rate.sleep()
+            continue
+
+        pose_delta = xd * target_time
+        target_pose = transformations.transform_pose(x, pose_delta, rotated_frame=relative_to_tcp)
+
+        try:
+            arm.set_target_pose(pose=target_pose, target_time=target_time)
+        except InverseKinematicsException:
+            rospy.logdebug("IK solver failed for requested mouse6d pose update")
+
         rate.sleep()
 
 
 def main():
-    """ 3D mouse Control """
+    """Joint Position Example: 3D mouse Control
+
+    Use a 3Dconnexion mouse to control end-effector pose.
+    """
+    epilog = """
+Run `roslaunch cartesian_controller_utilities spacenav.launch` before starting this script.
+    """
     arg_fmt = argparse.RawDescriptionHelpFormatter
     parser = argparse.ArgumentParser(
-        formatter_class=arg_fmt, description=main.__doc__)
-    parser.add_argument('-r', action='store_true', help='move using relative rotation of end-effector')
+        formatter_class=arg_fmt, description=main.__doc__, epilog=epilog)
     parser.add_argument(
-        '--robot', action='store_true', help='for the real robot')
+        '--relative', action='store_true', help='Motion Relative to ee')
     parser.add_argument(
-        '--beta', action='store_true', help='for the real robot. beta driver')
+        '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
+    parser.add_argument(
+        '--gripper', type=str, help='gripper type', default=None)
+    parser.add_argument(
+        '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
+    )
     args = parser.parse_args(rospy.myargv()[1:])
 
-    rospy.init_node("joint_position_keyboard")
+    rospy.init_node("joint_position_mouse6d", log_level=rospy.INFO)
+
+    global relative_to_tcp
+    relative_to_tcp = args.relative
+
+    tcp_link = args.tcp
+    joints_prefix = args.namespace + '_' if args.namespace else None
+    if args.gripper == 'robotiq':
+        gripper = GripperType.ROBOTIQ
+    elif args.gripper == 'generic':
+        gripper = GripperType.GENERIC
+    else:
+        gripper = None
 
     global arm
-    arm = Arm(ft_sensor=False)
+    arm = Arm(namespace=args.namespace,
+              gripper_type=gripper,
+              joint_names_prefix=joints_prefix,
+              ee_link=tcp_link)
 
+    arm.dashboard_services.activate_ros_control_on_ur()
+
+    global mouse6d
+    mouse6d = Mouse6D()
+
+    wait_for_spacemouse_input()
     start_control()
     print("Done.")
 
