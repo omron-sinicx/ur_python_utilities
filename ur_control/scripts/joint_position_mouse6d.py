@@ -32,6 +32,7 @@ and to launch roslaunch cartesian_controller_utilities spacenav.launch
 #TODO launch automatically
 """
 import argparse
+import getch
 
 import rospy
 
@@ -56,38 +57,36 @@ def print_robot_state():
 
 
 def start_control():
-    rate = rospy.Rate(125)
+    rate = rospy.Rate(20)
     target_time = 0.25
-    delta_x = 0.01
+    delta_x = 0.005
     delta_q = np.deg2rad(1)
-
-    while not rospy.is_shutdown():
+    done = False
+    while not done and not rospy.is_shutdown():
         if mouse6d.twist is None:
             rate.sleep()
+            print("test")
             continue
 
-        x = arm.end_effector()
+        c = getch.getch()
+        if c:
+            if c in ['\x1b', '\x03']:
+                done = True
+                rospy.signal_shutdown("Example finished.")
         xd = np.array(mouse6d.twist, dtype=float)
-
-        xd[:3] = [delta_x*np.sign(xd[i]) if abs(xd[i]) > 0.15 else 0.0 for i in range(3)]
-        xd[3:] = [delta_q*np.sign(xd[3+i]) if abs(xd[3+i]) > 0.15 else 0.0 for i in range(3)]
+        x = arm.end_effector()
+        xd[:3] = [delta_x*np.sign(xd[i]) if abs(xd[i]) > 20.0 else 0.0 for i in range(3)]
+        xd[3:] = [delta_q*np.sign(xd[3+i]) if abs(xd[3+i]) > 2.0 else 0.0 for i in range(3)]
+        xd[0], xd[1] = xd[1], xd[0]
 
         if mouse6d.joy_buttons and mouse6d.joy_buttons[0] == 1:
-            print_robot_state()
+            arm.gripper.close()
+        elif mouse6d.joy_buttons and mouse6d.joy_buttons[1] == 1:
+            arm.gripper.open()
 
-        if not np.any(xd):
-            rate.sleep()
-            continue
+        target_pose = transformations.transform_pose(x, xd, rotated_frame=relative_to_tcp)
 
-        pose_delta = xd * target_time
-        target_pose = transformations.transform_pose(x, pose_delta, rotated_frame=relative_to_tcp)
-
-        try:
-            arm.set_target_pose(pose=target_pose, target_time=target_time)
-        except InverseKinematicsException:
-            rospy.logdebug("IK solver failed for requested mouse6d pose update")
-
-        rate.sleep()
+        arm.set_target_pose(pose=target_pose, target_time=target_time)
 
 
 def main():
