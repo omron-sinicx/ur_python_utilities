@@ -396,7 +396,7 @@ class Arm(object):
         # Compute the Jacobian matrix at current joint configuration
         end_effector_vel = self.kdl.forward_velocity(joint_angles, joint_velocities, tip_link)
 
-        return end_effector_vel
+        return np.array(end_effector_vel)
 
     def joint_angle(self, joint: str) -> float:
         """

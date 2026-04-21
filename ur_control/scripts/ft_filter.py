@@ -99,6 +99,7 @@ class FTsensor(object):
             if current_wrench is not None:
                 data = current_wrench - self.wrench_offset
                 msg = WrenchStamped()
+                msg.header.stamp = rospy.Time.now()
                 msg.wrench = conversions.to_wrench(data)
                 self.pub.publish(msg)
 
@@ -109,6 +110,7 @@ class FTsensor(object):
                     tcp_wrench[:3] += spalg.sensor_torque_to_tcp_force(tcp_position=pose_sensor_to_tcp, sensor_torques=current_wrench[3:])
                     tcp_wrench[3:] = np.zeros(3)
                     msg = WrenchStamped()
+                    msg.header.stamp = rospy.Time.now()
                     msg.wrench = conversions.to_wrench(tcp_wrench)
                     self.pub_tcp.publish(msg)
 
