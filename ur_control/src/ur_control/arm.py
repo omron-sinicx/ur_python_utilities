@@ -709,7 +709,7 @@ class Arm(object):
 
         rate = rospy.Rate(500)
 
-        while remaining_time > 0 and no_motion_count < 10:
+        while remaining_time > 0 and no_motion_count < 10 and not rospy.is_shutdown():
             rate.sleep()
             remaining_time = wait_time - (rospy.get_time() - start_time)
             curr_state = self.joint_angles()
