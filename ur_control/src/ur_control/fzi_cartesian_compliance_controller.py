@@ -40,6 +40,7 @@ from ur_control.fzi_utils import (
 )
 
 from geometry_msgs.msg import WrenchStamped, PoseStamped
+from cartesian_compliance_controller.srv import SetStiffness
 
 import dynamic_reconfigure.client
 
@@ -98,6 +99,9 @@ class CompliantController(Arm):
 
             "end_effector_link": dynamic_reconfigure.client.Client("%s%s" % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), timeout=10),
         }
+        self.set_stiffness_service = rospy.ServiceProxy('%s%s/set_stiffness' % (self.ns, CARTESIAN_COMPLIANCE_CONTROLLER), SetStiffness)
+        self.set_stiffness_service.wait_for_service(timeout=10)
+
         self.param_update_queue = collections.deque(maxlen=15)
         self.update_thread = None
         self.update_lock = threading.Lock()
@@ -265,10 +269,16 @@ class CompliantController(Arm):
         Update the stiffness values for the controller.
 
         Args:
-            stiffness (numpy.ndarray): A 6-element array representing the stiffness values
+            stiffness (numpy.ndarray): A 6-element array representing the stiffness values or a 36-element array representing the full stiffness matrix
         """
-        parameters = convert_stiffness_to_parameters(stiffness)
-        self.update_controller_parameters(parameters)
+        stiffness = np.asarray(stiffness)
+        if stiffness.shape == (6,):
+            parameters = convert_stiffness_to_parameters(stiffness)
+            self.update_controller_parameters(parameters)
+        elif stiffness.shape == (6, 6) or stiffness.shape == (36,):
+            self.set_stiffness_service(stiffness.flatten())
+        else:
+            raise ValueError("Invalid stiffness length %s" % len(stiffness))
 
     def set_control_mode(self, mode="parallel"):
         """
