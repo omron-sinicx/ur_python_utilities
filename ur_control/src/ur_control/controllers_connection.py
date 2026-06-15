@@ -1,93 +1,110 @@
 #!/usr/bin/env python
 
-import rospy
-from controller_manager_msgs.srv import SwitchController, SwitchControllerRequest, \
-    LoadController, UnloadController, ListControllers
-from ur_control.utils import solve_namespace
+import time
+
+import rclpy
+from controller_manager_msgs.srv import (SwitchController, LoadController,
+                                          UnloadController, ListControllers)
+from ur_control.utils import solve_namespace, read_parameter
+
+
+# ros2_control lifecycle state name for an activated controller (ROS 1 used "running").
+_ACTIVE = "active"
 
 
 class ControllersConnection():
-    def __init__(self, namespace=None):
+    """Wrapper around the ros2_control controller_manager services.
+
+    Requires a spinning rclpy node (e.g. driven by a MultiThreadedExecutor in a
+    background thread): the synchronous ``client.call`` calls below rely on the
+    executor processing the service responses.
+    """
+
+    def __init__(self, node, namespace=None):
+        self.node = node
         self.controllers_list = []
 
-        self.ns = solve_namespace(namespace)[1:]
+        self.ns = solve_namespace(namespace, node=node)[1:]
 
         if namespace:
             prefix = namespace + 'controller_manager/'
         else:
             prefix = '/controller_manager/'
 
-        # Only for osx sim
-        if rospy.has_param("use_gazebo_sim"):
+        # Only for osx sim: the controller_manager lives at the global namespace.
+        self.use_sim = bool(read_parameter(node, "use_gazebo_sim", False))
+        if self.use_sim:
             prefix = '/controller_manager/'
 
-        self.switch_service = rospy.ServiceProxy(prefix + 'switch_controller', SwitchController)
-        self.load_service = rospy.ServiceProxy(prefix + 'load_controller', LoadController)
-        self.unload_service = rospy.ServiceProxy(prefix + 'unload_controller', UnloadController)
-        self.list_controllers_service = rospy.ServiceProxy(prefix + 'list_controllers', ListControllers)
-        self.list_controllers_service.wait_for_service(1.0)
+        self.switch_client = node.create_client(SwitchController, prefix + 'switch_controller')
+        self.load_client = node.create_client(LoadController, prefix + 'load_controller')
+        self.unload_client = node.create_client(UnloadController, prefix + 'unload_controller')
+        self.list_controllers_client = node.create_client(ListControllers, prefix + 'list_controllers')
+        self.list_controllers_client.wait_for_service(timeout_sec=1.0)
+
+    def _call(self, client, request, timeout=5.0):
+        if not client.wait_for_service(timeout_sec=timeout):
+            raise RuntimeError("Service %s unavailable" % client.srv_name)
+        return client.call(request)
 
     def get_loaded_controllers(self):
         self.controllers_list = []
         try:
-            result = self.list_controllers_service()
+            result = self._call(self.list_controllers_client, ListControllers.Request())
             for controller in result.controller:
                 self.controllers_list.append(controller.name)
-        except:
+        except Exception:
             pass
 
     def get_controller_state(self, controller_name):
         try:
-            result = self.list_controllers_service()
+            result = self._call(self.list_controllers_client, ListControllers.Request())
             for controller in result.controller:
                 if controller.name == controller_name:
                     return controller.state
-        except:
+        except Exception:
             pass
-        rospy.logerr("Controller %s not found" % controller_name)
+        self.node.get_logger().error("Controller %s not found" % controller_name)
         raise ValueError(f"Controller {controller_name} not found")
-        return None
 
     def load_controllers(self, controllers_list):
         self.get_loaded_controllers()
-        self.load_service.wait_for_service(0.1)
         for controller in controllers_list:
             if controller not in self.controllers_list:
-                result = self.load_service(controller)
-                rospy.loginfo('Loading controller %s. Result=%s' % (controller, result))
-                if result:
+                result = self._call(self.load_client, LoadController.Request(name=controller), timeout=0.1)
+                self.node.get_logger().info('Loading controller %s. Result=%s' % (controller, result.ok))
+                if result.ok:
                     self.controllers_list.append(controller)
 
     def unload_controllers(self, controllers_list):
         try:
-            self.unload_service.wait_for_service(0.1)
             for controller in controllers_list:
-                result = self.unload_service(controller)
-                rospy.loginfo('Unloading controller %s. Result=%s' % (controller, result))
-                if result:
+                result = self._call(self.unload_client, UnloadController.Request(name=controller), timeout=0.1)
+                self.node.get_logger().info('Unloading controller %s. Result=%s' % (controller, result.ok))
+                if result.ok:
                     self.controllers_list.remove(controller)
         except Exception as e:
-            rospy.logerr("Unload controllers service call failed: %s" % e)
+            self.node.get_logger().error("Unload controllers service call failed: %s" % e)
 
     def check_on_controllers_state(self, on_controllers):
         """
-        Return a list of controllers that need to be switched on (not already running)
+        Return a list of controllers that need to be activated (not already active)
         """
         controllers_to_switch = []
         for c in on_controllers:
-            if c is not None and self.get_controller_state(c) != "running":
+            if c is not None and self.get_controller_state(c) != _ACTIVE:
                 controllers_to_switch.append(c)
         return controllers_to_switch
 
     def check_off_controllers_state(self, off_controllers):
         """
-        Return a list of controllers that need to be switched off (currently running)
+        Return a list of controllers that need to be deactivated (currently active)
         """
         controllers_to_switch = []
         for c in off_controllers:
             if c is not None:
                 state = self.get_controller_state(c)
-                if state == "running":
+                if state == _ACTIVE:
                     controllers_to_switch.append(c)
         return controllers_to_switch
 
@@ -100,51 +117,52 @@ class ControllersConnection():
         :return:
         """
 
-        if rospy.has_param("use_gazebo_sim"):
+        if self.use_sim:
             controllers_on = [self.ns + controller for controller in controllers_on]
             controllers_off = [self.ns + controller for controller in controllers_off]
 
         try:
-            self.switch_service.wait_for_service(0.1)
-            switch_request_object = SwitchControllerRequest()
-            switch_request_object.start_controllers = self.check_on_controllers_state(controllers_on)
-            switch_request_object.stop_controllers = self.check_off_controllers_state(controllers_off)
-            switch_request_object.strictness = strictness
+            request = SwitchController.Request()
+            request.activate_controllers = self.check_on_controllers_state(controllers_on)
+            request.deactivate_controllers = self.check_off_controllers_state(controllers_off)
+            request.strictness = strictness
 
-            if switch_request_object.start_controllers == [] and switch_request_object.stop_controllers == []:
+            if request.activate_controllers == [] and request.deactivate_controllers == []:
                 return True
 
-            switch_result = self.switch_service(switch_request_object)
+            switch_result = self._call(self.switch_client, request, timeout=0.1)
             """
-            [controller_manager_msgs/SwitchController]
+            [controller_manager_msgs/srv/SwitchController]
             int32 BEST_EFFORT=1
             int32 STRICT=2
-            string[] start_controllers
-            string[] stop_controllers
+            string[] activate_controllers
+            string[] deactivate_controllers
             int32 strictness
+            bool activate_asap
+            builtin_interfaces/Duration timeout
             ---
             bool ok
             """
-            rospy.logdebug("Switch Result==>" + str(switch_result.ok))
+            self.node.get_logger().debug("Switch Result==>" + str(switch_result.ok))
 
             if not switch_result.ok:  # Return if service failed
                 return False
 
-            # Check that the controllers are running before returning
-            start_time = rospy.get_time()
-            while (rospy.get_time() - start_time) < 5.0 and not rospy.is_shutdown():
-                all_running = True
+            # Check that the controllers are active before returning
+            start_time = time.time()
+            while (time.time() - start_time) < 5.0 and rclpy.ok():
+                all_active = True
                 for controller in controllers_on:
-                    if self.get_controller_state(controller) != "running":
-                        all_running = False
+                    if self.get_controller_state(controller) != _ACTIVE:
+                        all_active = False
                         break
-                if all_running:
+                if all_active:
                     break
-            rospy.sleep(1.0)  # wait for the controller to be fully activated
+            time.sleep(1.0)  # wait for the controller to be fully activated
             return switch_result.ok
 
         except Exception as e:
-            rospy.logerr("Switch controllers service call failed: %s" % e)
+            self.node.get_logger().error("Switch controllers service call failed: %s" % e)
             return False
 
     def reset_controllers(self):
@@ -158,20 +176,20 @@ class ControllersConnection():
 
         result_off_ok = self.switch_controllers(controllers_on=[], controllers_off=self.controllers_list)
 
-        rospy.logdebug("Deactivated Controllers")
+        self.node.get_logger().debug("Deactivated Controllers")
 
         if result_off_ok:
-            rospy.logdebug("Activating Controllers")
+            self.node.get_logger().debug("Activating Controllers")
             result_on_ok = self.switch_controllers(
                 controllers_on=self.controllers_list, controllers_off=[])
             if result_on_ok:
-                rospy.logdebug("Controllers Reset==>" +
-                               str(self.controllers_list))
+                self.node.get_logger().debug("Controllers Reset==>" +
+                                             str(self.controllers_list))
                 reset_result = True
             else:
-                rospy.logdebug("result_on_ok==>" + str(result_on_ok))
+                self.node.get_logger().debug("result_on_ok==>" + str(result_on_ok))
         else:
-            rospy.logdebug("result_off_ok==>" + str(result_off_ok))
+            self.node.get_logger().debug("result_off_ok==>" + str(result_off_ok))
 
         return reset_result
 

@@ -1,57 +1,74 @@
 # Gripper action
-import actionlib
+import time
 import numpy as np
-import rospy
+import rclpy
+from rclpy.action import ActionClient
+from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
-from control_msgs.msg import GripperCommandAction, GripperCommandGoal
+from control_msgs.action import GripperCommand
 
 from ur_control import utils
-# Link attacher
+# Link attacher (optional; Gazebo sim only — ROS 2 availability pending the sim phase).
 try:
-    from gazebo_ros_link_attacher.srv import Attach, AttachRequest
+    from gazebo_ros_link_attacher.srv import Attach
 except ImportError:
-    print("Grasping pluging can't be loaded")
+    print("Grasping plugin can't be loaded")
 
 try:
-    import robotiq_msgs.msg
+    import robotiq_msgs.action
 except ImportError:
-    print("Robotiq gripper can't be load. robotiq_msgs required.")
+    print("Robotiq gripper can't be loaded. robotiq_msgs required.")
+
+
+# NOTE (ROS 2): gripper config (joint names, gripper_type, max_gap, ...) is read from
+# the shared node's parameters (launch-provided) rather than a global param server.
+# Functional validation of the grippers depends on the robotiq_control ROS 2 port.
 
 
 class GripperControllerBase():
-    def __init__(self, namespace='', node_name='', prefix=None, timeout=5.0) -> None:
+    def __init__(self, node, namespace='', node_name='', prefix=None, timeout=5.0) -> None:
+        self.node = node
         self.ns = namespace
         self.prefix = prefix if prefix is not None else ''
+        self._goal_handle = None
+        self._result = None
+        self._status = None
+
+        # Gripper joint name(s), provided to the shared node as parameters.
+        joint = utils.read_parameter(node, "joint", None)
+        joints = utils.read_parameter(node, "joints", None)
+        joint_name = utils.read_parameter(node, "joint_name", None)
         self.valid_joint_names = []
-        if rospy.has_param(self.ns + node_name + "/joint"):
-            self.valid_joint_names = [rospy.get_param(self.ns + node_name + "/joint")]
-        elif rospy.has_param(self.ns + node_name + "/joints"):
-            self.valid_joint_names = rospy.get_param(self.ns + node_name + "/joints")
-        elif rospy.has_param(self.ns + node_name + "/joint_name"):
-            self.valid_joint_names = rospy.get_param(self.ns + node_name + "/joint_name")
-            if isinstance(self.valid_joint_names, str):
-                self.valid_joint_names = [prefix + self.valid_joint_names]
+        if joint is not None:
+            self.valid_joint_names = [joint]
+        elif joints is not None:
+            self.valid_joint_names = joints
+        elif joint_name is not None:
+            if isinstance(joint_name, str):
+                self.valid_joint_names = [self.prefix + joint_name]
+            else:
+                self.valid_joint_names = joint_name
         else:
-            rospy.logerr("Couldn't find valid joints params in %s" % (self.ns + node_name))
+            self.node.get_logger().error("Couldn't find valid gripper joint params for %s" % node_name)
             return
 
-        self._js_sub = rospy.Subscriber('/joint_states', JointState, self.joint_states_cb, queue_size=1)
+        self._js_sub = node.create_subscription(JointState, '/joint_states', self.joint_states_cb, qos_profile_sensor_data)
 
         retry = False
-        rospy.logdebug('Waiting for [%sjoint_states] topic' % self.ns)
-        start_time = rospy.get_time()
+        self.node.get_logger().debug('Waiting for [%sjoint_states] topic' % self.ns)
+        start_time = time.time()
         while not hasattr(self, '_joint_names'):
-            if (rospy.get_time() - start_time) > timeout and not retry:
+            if (time.time() - start_time) > timeout and not retry:
                 # Re-try with namespace
-                self._js_sub = rospy.Subscriber('%sjoint_states' % self.ns, JointState, self.joint_states_cb, queue_size=1)
-                start_time = rospy.get_time()
+                self._js_sub = node.create_subscription(JointState, '%sjoint_states' % self.ns, self.joint_states_cb, qos_profile_sensor_data)
+                start_time = time.time()
                 retry = True
                 continue
-            elif (rospy.get_time() - start_time) > timeout and retry:
-                rospy.logerr('Timed out waiting for gripper joint_states topic')
+            elif (time.time() - start_time) > timeout and retry:
+                self.node.get_logger().error('Timed out waiting for gripper joint_states topic')
                 return
-            rospy.sleep(0.01)
-            if rospy.is_shutdown():
+            time.sleep(0.01)
+            if not rclpy.ok():
                 return
 
     def open(self):
@@ -95,12 +112,43 @@ class GripperControllerBase():
             self._current_jnt_efforts = np.array(effort)
             self._joint_names = list(name)
 
+    # --- shared async-action helpers (ROS 2) ---------------------------------
+    def _goal_response_cb(self, future):
+        self._goal_handle = future.result()
+        if self._goal_handle is not None and self._goal_handle.accepted:
+            self._goal_handle.get_result_async().add_done_callback(self._result_cb)
+
+    def _result_cb(self, future):
+        response = future.result()
+        self._result = response.result
+        self._status = response.status
+
+    def _send_goal(self, client, goal, wait, timeout=5.0):
+        self._result = None
+        self._status = None
+        self._goal_handle = None
+        send_future = client.send_goal_async(goal)
+        send_future.add_done_callback(self._goal_response_cb)
+        if wait:
+            return self._wait_result(timeout)
+        return True
+
+    def _wait_result(self, timeout=15.0):
+        start_time = time.time()
+        while (time.time() - start_time) < timeout and rclpy.ok():
+            if self._result is not None:
+                return True
+            if self._goal_handle is not None and not self._goal_handle.accepted:
+                return False
+            time.sleep(0.01)
+        return self._result is not None
+
 
 class GripperController(GripperControllerBase):
-    def __init__(self, namespace='', prefix=None, timeout=5.0, attach_link='robot::wrist_3_link'):
+    def __init__(self, node, namespace='', prefix=None, timeout=5.0, attach_link='robot::wrist_3_link'):
         node_name = "gripper_controller"
-        super().__init__(namespace, node_name, prefix, timeout)
-        self.gripper_type = str(rospy.get_param(self.ns + node_name + "/gripper_type"))
+        super().__init__(node, namespace, node_name, prefix, timeout)
+        self.gripper_type = str(utils.read_parameter(node, "gripper_type", "85"))
 
         if self.gripper_type == "hand-e":
             self._max_gap = 0.025 * 2.0
@@ -117,32 +165,29 @@ class GripperController(GripperControllerBase):
             self._to_close = 0.001
             self._max_angle = 0.69
 
-        attach_plugin = rospy.get_param("grasp_plugin", default=False)
+        attach_plugin = utils.read_parameter(node, "grasp_plugin", False)
         if attach_plugin:
             try:
                 # gazebo_ros link attacher
                 self.attach_link = attach_link
-                self.attach_srv = rospy.ServiceProxy('/link_attacher_node/attach', Attach)
-                self.detach_srv = rospy.ServiceProxy('/link_attacher_node/detach', Attach)
-                rospy.logdebug('Waiting for service: {0}'.format(self.attach_srv.resolved_name))
-                rospy.logdebug('Waiting for service: {0}'.format(self.detach_srv.resolved_name))
+                self.attach_srv = node.create_client(Attach, '/link_attacher_node/attach')
+                self.detach_srv = node.create_client(Attach, '/link_attacher_node/detach')
                 self.attach_srv.wait_for_service()
                 self.detach_srv.wait_for_service()
             except Exception:
-                rospy.logerr("Fail to load grasp plugin services. Make sure to launch the right Gazebo world!")
+                self.node.get_logger().error("Fail to load grasp plugin services. Make sure to launch the right Gazebo world!")
         # Gripper action server
         action_server = self.ns + node_name + '/gripper_cmd'
-        self._client = actionlib.SimpleActionClient(action_server, GripperCommandAction)
-        self._goal = GripperCommandGoal()
-        rospy.logdebug('Waiting for [%s] action server' % action_server)
-        server_up = self._client.wait_for_server(timeout=rospy.Duration(timeout))
-        if not server_up:
-            rospy.logerr('Timed out waiting for Gripper Command'
-                         ' Action Server to connect. Start the action server'
-                         ' before running this node.')
-            raise rospy.ROSException('GripperCommandAction timed out: {0}'.format(action_server))
-        rospy.logdebug('Successfully connected to [%s]' % action_server)
-        rospy.loginfo('GripperCommandAction initialized. ns: {0}'.format(self.ns))
+        self._client = ActionClient(node, GripperCommand, action_server)
+        self._goal = GripperCommand.Goal()
+        self.node.get_logger().debug('Waiting for [%s] action server' % action_server)
+        if not self._client.wait_for_server(timeout_sec=timeout):
+            self.node.get_logger().error('Timed out waiting for Gripper Command'
+                                         ' Action Server to connect. Start the action server'
+                                         ' before running this node.')
+            raise RuntimeError('GripperCommand action timed out: {0}'.format(action_server))
+        self.node.get_logger().debug('Successfully connected to [%s]' % action_server)
+        self.node.get_logger().info('GripperCommand action initialized. ns: {0}'.format(self.ns))
 
     def close(self, wait=True):
         return self.command(0.0, percentage=True, wait=wait)
@@ -151,7 +196,7 @@ class GripperController(GripperControllerBase):
         return self.command(value, percentage=True, wait=wait)
 
     def command(self, value, percentage=False, wait=True):
-        """ assume command given in percentage otherwise meters 
+        """ assume command given in percentage otherwise meters
             percentage bool: If True value value assumed to be from 0.0 to 1.0
                                      where 1.0 is open and 0.0 is close
                              If False value value assume to be from 0.0 to max_gap
@@ -169,7 +214,7 @@ class GripperController(GripperControllerBase):
                 cmd = np.clip(value, 0.0, self._max_gap)
                 cmd = (value)
             angle = self._distance_to_angle(cmd)
-            self._goal.command.position = angle
+            self._goal.command.position = float(angle)
         if self.gripper_type == "hand-e":
             cmd = 0.0
             if percentage:
@@ -178,12 +223,12 @@ class GripperController(GripperControllerBase):
             else:
                 cmd = np.clip(value, 0.0, self._max_gap)
                 cmd = (self._max_gap - value) / 2.0
-            self._goal.command.position = cmd
+            self._goal.command.position = float(cmd)
         if wait:
-            self._client.send_goal_and_wait(self._goal, execute_timeout=rospy.Duration(2))
-            rospy.sleep(0.05)
+            self._send_goal(self._client, self._goal, wait=True, timeout=2.0)
+            time.sleep(0.05)
         else:
-            self._client.send_goal(self._goal)
+            self._send_goal(self._client, self._goal, wait=False)
         return True
 
     def _distance_to_angle(self, distance):
@@ -197,15 +242,15 @@ class GripperController(GripperControllerBase):
         return distance
 
     def get_result(self):
-        return self._client.get_result()
+        return self._result
 
     def get_state(self):
-        return self._client.get_state()
+        return self._status
 
     def grab(self, link_name):
         parent = self.attach_link.split('::')
         child = link_name.split('::')
-        req = AttachRequest()
+        req = Attach.Request()
         req.model_name_1 = parent[0]
         req.link_name_1 = parent[1]
         req.model_name_2 = child[0]
@@ -219,7 +264,7 @@ class GripperController(GripperControllerBase):
     def release(self, link_name):
         parent = self.attach_link.rsplit('::')
         child = link_name.rsplit('::')
-        req = AttachRequest()
+        req = Attach.Request()
         req.model_name_1 = parent[0]
         req.link_name_1 = parent[1]
         req.model_name_2 = child[0]
@@ -228,10 +273,11 @@ class GripperController(GripperControllerBase):
         return res.ok
 
     def stop(self):
-        self._client.cancel_goal()
+        if self._goal_handle is not None:
+            self._goal_handle.cancel_goal_async()
 
     def wait(self, timeout=15.0):
-        return self._client.wait_for_result(timeout=rospy.Duration(timeout))
+        return self._wait_result(timeout)
 
     def get_position(self):
         """
@@ -249,9 +295,9 @@ class GripperController(GripperControllerBase):
 
 
 class RobotiqGripper(GripperControllerBase):
-    def __init__(self, namespace="", prefix="", timeout=2):
+    def __init__(self, node, namespace="", prefix="", timeout=2):
         node_name = "gripper_action_controller"
-        super().__init__(namespace, node_name, prefix, timeout)
+        super().__init__(node, namespace, node_name, prefix, timeout)
         if not namespace or namespace == "/":
             self.ns = ""
         else:
@@ -259,15 +305,16 @@ class RobotiqGripper(GripperControllerBase):
 
         self.opening_width = 0.0
 
-        self.gripper = actionlib.SimpleActionClient(self.ns + "gripper_action_controller", robotiq_msgs.msg.CModelCommandAction)
-        self.sub_gripper_status_ = rospy.Subscriber("%sgripper_status" % self.ns, robotiq_msgs.msg.CModelCommandFeedback, self._gripper_status_callback)
+        self.gripper = ActionClient(node, robotiq_msgs.action.CModelCommand, self.ns + "gripper_action_controller")
+        self.sub_gripper_status_ = node.create_subscription(robotiq_msgs.action.CModelCommand.Feedback, "%sgripper_status" % self.ns, self._gripper_status_callback, qos_profile_sensor_data)
 
-        if rospy.has_param(self.ns + "gripper_action_controller/joint_name"):
-            self.gripper_type = rospy.get_param(self.ns + "gripper_action_controller/joint_name")
-            self._max_gap = float(rospy.get_param(self.ns + "gripper_action_controller/max_gap"))
-            self._max_angle = float(rospy.get_param(self.ns + "gripper_action_controller/counts_to_meters"))
+        joint_name = utils.read_parameter(node, "counts_to_meters", None)
+        if utils.read_parameter(node, "joint_name", None) is not None:
+            self.gripper_type = utils.read_parameter(node, "joint_name", "finger_joint")
+            self._max_gap = float(utils.read_parameter(node, "max_gap", 0.085))
+            self._max_angle = float(utils.read_parameter(node, "counts_to_meters", 0.8))
         else:
-            rospy.logwarn("Robotiq gripper parameters not found. Assuming Robotiq Gripper 85")
+            self.node.get_logger().warn("Robotiq gripper parameters not found. Assuming Robotiq Gripper 85")
             self.gripper_type = "finger_joint"
             self._max_gap = 0.085
             self._max_angle = 0.8
@@ -280,11 +327,10 @@ class RobotiqGripper(GripperControllerBase):
             self._to_open = self._max_gap
             self._to_close = 0.001
 
-        success = self.gripper.wait_for_server(rospy.Duration(timeout))
-        if success:
-            rospy.loginfo("=== Connected to ROBOTIQ gripper ===")
+        if self.gripper.wait_for_server(timeout_sec=timeout):
+            self.node.get_logger().info("=== Connected to ROBOTIQ gripper ===")
         else:
-            rospy.logerr("Unable to connect to ROBOTIQ gripper")
+            self.node.get_logger().error("Unable to connect to ROBOTIQ gripper")
 
     def _gripper_status_callback(self, msg):
         self.opening_width = msg.position  # [m]
@@ -335,25 +381,23 @@ class RobotiqGripper(GripperControllerBase):
         command: "open", "close" or opening width
         force: Gripper force in N. From 40 to 100
         velocity: Gripper speed. From 0.013 to 0.1
-        attached_last_object: bool, Attach/detach last attached object if set to True
 
         Use a slow closing speed when using a low gripper force, or the force might be unexpectedly high.
         """
-        goal = robotiq_msgs.msg.CModelCommandGoal()
-        goal.velocity = velocity
-        goal.force = force
+        goal = robotiq_msgs.action.CModelCommand.Goal()
+        goal.velocity = float(velocity)
+        goal.force = float(force)
         if command == "close":
             goal.position = 0.0
         elif command == "open":
             goal.position = 0.140
         else:
-            goal.position = command     # This sets the opening width directly
+            goal.position = float(command)     # This sets the opening width directly
 
-        self.gripper.send_goal(goal)
-        rospy.logdebug("Sending command " + str(command) + " to gripper: " + self.ns)
+        self.node.get_logger().debug("Sending command " + str(command) + " to gripper: " + self.ns)
         if wait:
-            self.gripper.wait_for_result(rospy.Duration(5.0))  # Default wait time: 5 s
-            result = self.gripper.get_result()
-            return True if result else False
+            ok = self._send_goal(self.gripper, goal, wait=True, timeout=5.0)
+            return bool(ok and self._result is not None)
         else:
+            self._send_goal(self.gripper, goal, wait=False)
             return True
