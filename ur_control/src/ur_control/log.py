@@ -1,4 +1,12 @@
-import rospy
+# Log severity levels. Values match the legacy rospy levels for compatibility
+# (this module is a roscore-independent console logger, not tied to any ROS API).
+DEBUG = 1
+INFO = 2
+WARN = 4
+ERROR = 8
+FATAL = 16
+
+
 class TextColors:
   """
   The C{TextColors} class is used as alternative to the C{rospy} logger. It's useful to
@@ -10,7 +18,7 @@ class TextColors:
   WARNING = '\033[93m'
   FAIL = '\033[91m'
   ENDC = '\033[0m'
-  log_level = rospy.INFO
+  log_level = INFO
 
   def disable(self):
     """
@@ -70,7 +78,7 @@ class TextColors:
     @type  msg: string
     @param msg: the message to be printed.
     """
-    if self.log_level <= rospy.DEBUG:
+    if self.log_level <= DEBUG:
       print((self.OKGREEN + 'Debug ' + self.ENDC + str(msg)))
 
   def loginfo(self, msg):
@@ -80,7 +88,7 @@ class TextColors:
     @type  msg: string
     @param msg: the message to be printed.
     """
-    if self.log_level <= rospy.INFO:
+    if self.log_level <= INFO:
       print(('INFO ' + str(msg)))
 
   def logwarn(self, msg):
@@ -90,7 +98,7 @@ class TextColors:
     @type  msg: string
     @param msg: the message to be printed.
     """
-    if self.log_level <= rospy.WARN:
+    if self.log_level <= WARN:
       print((self.WARNING + 'Warning ' + self.ENDC + str(msg)))
 
   def logerr(self, msg):
@@ -100,7 +108,7 @@ class TextColors:
     @type  msg: string
     @param msg: the message to be printed.
     """
-    if self.log_level <= rospy.ERROR:
+    if self.log_level <= ERROR:
       print((self.FAIL + 'Error ' + self.ENDC + str(msg)))
 
   def logfatal(self, msg):
@@ -110,7 +118,7 @@ class TextColors:
     @type  msg: string
     @param msg: the message to be printed.
     """
-    if self.log_level <= rospy.FATAL:
+    if self.log_level <= FATAL:
       print((self.FAIL + 'Fatal ' + self.ENDC + str(msg)))
 
   def set_log_level(self, level):

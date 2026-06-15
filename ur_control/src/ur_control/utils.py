@@ -5,23 +5,23 @@ import sys
 import copy
 import time
 import numpy as np
-import rospy
-import rospkg
-import sys
-import inspect
-from ur_control import transformations, spalg
-from sensor_msgs.msg import JointState
 import quaternion
+
+import rclpy
+from ament_index_python.packages import get_package_share_directory
+
+from ur_control import transformations, spalg
+from ur_control.log import TextColors
+from sensor_msgs.msg import JointState
 
 
 def load_urdf_string(package, filename):
-    rospack = rospkg.RosPack()
-    package_dir = rospack.get_path(package)
-    urdf_file = package_dir + '/urdf/' + filename + '.urdf'
-    urdf = None
+    package_dir = get_package_share_directory(package)
+    urdf_file = os.path.join(package_dir, 'urdf', filename + '.urdf')
     with open(urdf_file) as f:
         urdf = f.read()
     return urdf
+
 
 class PDRotation:
     def __init__(self, kp, kd=None):
@@ -30,7 +30,9 @@ class PDRotation:
         self.reset()
 
     def reset(self):
-        self.last_time = rospy.get_rostime()
+        # Monotonic wall-clock seconds (float). ROS 2 has no global rospy clock;
+        # pass dt explicitly to update() when sim-time-accurate timing is required.
+        self.last_time = time.monotonic()
         self.last_error = np.quaternion(1, 0, 0, 0)
 
     def set_gains(self, kp=None, kd=None):
@@ -40,11 +42,11 @@ class PDRotation:
             self.kd = np.array(kd)
 
     def update(self, quaternion_error, dt=None):
-        now = rospy.get_rostime()
+        now = time.monotonic()
         if dt is None:
             dt = now - self.last_time
 
-        k_prime = 2 * quaternion_error.scalar*np.identity(3)-spalg.skew(quaternion_error.vector)
+        k_prime = 2 * quaternion_error.w*np.identity(3)-spalg.skew(quaternion_error.vec)
         p_term = np.dot(self.kp, k_prime)
 
         # delta_error = quaternion_error - self.last_error
@@ -59,16 +61,17 @@ class PDRotation:
 
 class PID:
     def __init__(self, Kp, Ki=None, Kd=None, dynamic_pid=False, max_gain_multiplier=10.0):
-        # Proportional gain
-        self.Kp = np.array(Kp)
-        self.Ki = np.zeros_like(Kp)
-        self.Kd = np.zeros_like(Kp)
+        # Proportional gain. Gains are real-valued; cast to float so the integral
+        # term stays float64 and supports in-place accumulation (`integral += error*dt`).
+        self.Kp = np.array(Kp, dtype=float)
+        self.Ki = np.zeros_like(self.Kp)
+        self.Kd = np.zeros_like(self.Kp)
         # Integral gain
         if Ki is not None:
-            self.Ki = np.array(Ki)
+            self.Ki = np.array(Ki, dtype=float)
         # Derivative gain
         if Kd is not None:
-            self.Kd = np.array(Kd)
+            self.Kd = np.array(Kd, dtype=float)
         self.set_windup(np.ones_like(self.Kp))
         # Reset
         self.reset()
@@ -76,17 +79,18 @@ class PID:
         self.max_gain_multiplier = max_gain_multiplier
 
     def reset(self):
-        self.last_time = rospy.get_rostime()
+        # Monotonic wall-clock seconds (float); see PDRotation.reset note.
+        self.last_time = time.monotonic()
         self.last_error = np.zeros_like(self.Kp)
         self.integral = np.zeros_like(self.Kp)
 
     def set_gains(self, Kp=None, Ki=None, Kd=None):
         if Kp is not None:
-            self.Kp = np.array(Kp)
+            self.Kp = np.array(Kp, dtype=float)
         if Ki is not None:
-            self.Ki = np.array(Ki)
+            self.Ki = np.array(Ki, dtype=float)
         if Kd is not None:
-            self.Kd = np.array(Kd)
+            self.Kd = np.array(Kd, dtype=float)
 
     def set_windup(self, windup):
         self.i_min = -np.array(windup)
@@ -112,7 +116,7 @@ class PID:
             kd = self.Kd
             ki = self.Ki
 
-        now = rospy.get_rostime()
+        now = time.monotonic()
         if dt is None:
             dt = now - self.last_time
         delta_error = error - self.last_error
@@ -121,7 +125,7 @@ class PID:
         p_term = kp * error
         i_term = ki * self.integral
         i_term = np.maximum(self.i_min, np.minimum(i_term, self.i_max))
-        
+
         # First delta error is huge since it was initialized at zero first, avoid considering
         if not np.allclose(self.last_error, np.zeros_like(self.last_error)):
             d_term = kd * delta_error / dt
@@ -135,132 +139,8 @@ class PID:
         return output
 
 
-class TextColors:
-    """
-    The C{TextColors} class is used as alternative to the C{rospy} logger. It's useful to
-    print messages when C{roscore} is not running.
-    """
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
-    log_level = rospy.INFO
-
-    def disable(self):
-        """
-        Resets the coloring.
-        """
-        self.HEADER = ''
-        self.OKBLUE = ''
-        self.OKGREEN = ''
-        self.WARNING = ''
-        self.FAIL = ''
-        self.ENDC = ''
-
-    def blue(self, msg):
-        """
-        Prints a B{blue} color message
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        print((self.OKBLUE + msg + self.ENDC))
-
-    def debug(self, msg):
-        """
-        Prints a B{green} color message
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        print((self.OKGREEN + msg + self.ENDC))
-
-    def error(self, msg):
-        """
-        Prints a B{red} color message
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        print((self.FAIL + msg + self.ENDC))
-
-    def ok(self, msg):
-        """
-        Prints a B{green} color message
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        print((self.OKGREEN + msg + self.ENDC))
-
-    def warning(self, msg):
-        """
-        Prints a B{yellow} color message
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        print((self.WARNING + msg + self.ENDC))
-
-    def logdebug(self, msg):
-        """
-        Prints message with the word 'Debug' in green at the begging.
-        Alternative to C{rospy.logdebug}.
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        if self.log_level <= rospy.DEBUG:
-            print((self.OKGREEN + 'Debug ' + self.ENDC + str(msg)))
-
-    def loginfo(self, msg):
-        """
-        Prints message with the word 'INFO' begging.
-        Alternative to C{rospy.loginfo}.
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        if self.log_level <= rospy.INFO:
-            print(('INFO ' + str(msg)))
-
-    def logwarn(self, msg):
-        """
-        Prints message with the word 'Warning' in yellow at the begging.
-        Alternative to C{rospy.logwarn}.
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        if self.log_level <= rospy.WARN:
-            print((self.WARNING + 'Warning ' + self.ENDC + str(msg)))
-
-    def logerr(self, msg):
-        """
-        Prints message with the word 'Error' in red at the begging.
-        Alternative to C{rospy.logerr}.
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        if self.log_level <= rospy.ERROR:
-            print((self.FAIL + 'Error ' + self.ENDC + str(msg)))
-
-    def logfatal(self, msg):
-        """
-        Prints message with the word 'Fatal' in red at the begging.
-        Alternative to C{rospy.logfatal}.
-        @type  msg: string
-        @param msg: the message to be printed.
-        """
-        if self.log_level <= rospy.FATAL:
-            print((self.FAIL + 'Fatal ' + self.ENDC + str(msg)))
-
-    def set_log_level(self, level):
-        """
-        Sets the log level. Possible values are:
-          - DEBUG:  1
-          - INFO:   2
-          - WARN:   4
-          - ERROR:  8
-          - FATAL:  16
-        @type  level: int
-        @param level: the new log level
-        """
-        self.log_level = level
+# TextColors is the roscore-independent console logger; defined once in ur_control.log
+# and re-exported here for backwards compatibility (ur_control.utils.TextColors).
 
 
 ## Helper Functions ##
@@ -296,7 +176,7 @@ def db_error_msg(name, logger=TextColors()):
     @type  name: string
     @param name: database name
     @type  logger: Object
-    @param logger: Logger instance. When used in ROS, the recommended C{logger=rospy}.
+    @param logger: Logger instance.
     """
     msg = 'Database %s not found. Please generate it. [rosrun denso_openrave generate_databases.py]' % name
     logger.logerr(msg)
@@ -340,12 +220,10 @@ def raise_not_implemented():
     raise NotImplementedError()
 
 
-def topic_exist(topic):
-    published_topics = rospy.get_published_topics()
-    for pt in published_topics:
-        if topic == pt[0] :
-            return True
-    return False
+def topic_exist(node, topic):
+    """Whether C{topic} is currently advertised, as seen by C{node}."""
+    topic_names = [name for name, _ in node.get_topic_names_and_types()]
+    return topic in topic_names
 
 def read_key(echo=False):
     """
@@ -368,80 +246,63 @@ def resolve_parameter(value, default_value):
     else:
         return default_value
 
-def read_parameter(name, default):
+def read_parameter(node, name, default):
     """
-    Get a parameter from the ROS parameter server. If it's not found, a
-    warn is printed.
+    Read a parameter from C{node}, declaring it with C{default} if undeclared.
+
+    NOTE: ROS 2 parameters are node-scoped (there is no global parameter server),
+    so 'global' resources such as robot_description are fetched from topics, not here.
+    @type  node: rclpy.node.Node
     @type  name: string
-    @param name: Parameter name
-    @type  default: Object
-    @param default: Default value for the parameter. The type should be
-    the same as the one expected for the parameter.
+    @param name: Parameter name (a flat name, not a slashed global path)
+    @param default: Default value used to declare the parameter if missing.
+    @return: The resulting parameter value (or C{default}).
+    """
+    from rcl_interfaces.msg import ParameterDescriptor
+    if not node.has_parameter(name):
+        node.declare_parameter(name, default, ParameterDescriptor(dynamic_typing=True))
+    value = node.get_parameter(name).value
+    return default if value is None else value
+
+
+def read_parameter_err(node, name):
+    """
+    Read a parameter from C{node}. If it is not declared/set, log an error.
+    @rtype: (bool, any)
+    @return: (found, value); value is None when not found.
+    """
+    if not node.has_parameter(name):
+        node.get_logger().error("Parameter [%s] not found" % (name))
+        return False, None
+    return True, node.get_parameter(name).value
+
+
+def read_parameter_fatal(node, name):
+    """
+    Read a required parameter from C{node}; raise if it is not declared/set.
     @rtype: any
-    @return: The resulting parameter
+    @return: The resulting parameter value.
     """
-    if rospy.is_shutdown():
-        logger = TextColors()
-        logger.logwarn('roscore not found, parameter [%s] using default: %s' % (name, default))
-    else:
-        if not rospy.has_param(name):
-            rospy.logwarn('Parameter [%s] not found, using default: %s' % (name, default))
-        return rospy.get_param(name, default)
-    return default
-
-
-def read_parameter_err(name):
-    """
-    Get a parameter from the ROS parameter server. If it's not found, a
-    error is printed.
-    @type name: string
-    @param name: Parameter name
-    @rtype: has_param, param
-    @return: (has_param) True if succeeded, false otherwise. The
-    parameter is None if C{has_param=False}.
-    """
-    if rospy.is_shutdown():
-        logger = TextColors()
-        logger.logerr('roscore not found')
-        has_param = False
-    else:
-        has_param = True
-        if not rospy.has_param(name):
-            rospy.logerr("Parameter [%s] not found" % (name))
-            has_param = False
-    return has_param, rospy.get_param(name, None)
-
-
-def read_parameter_fatal(name):
-    """
-    Get a parameter from the ROS parameter server. If it's not found, an
-    exception will be raised.
-    @type name: string
-    @param name: Parameter name
-    @rtype: any
-    @return: The resulting parameter
-    """
-    if rospy.is_shutdown():
-        logger = TextColors()
-        logger.logfatal('roscore not found')
+    if not node.has_parameter(name):
+        node.get_logger().fatal("Parameter [%s] not found" % (name))
         raise Exception('Required parameter {0} not found'.format(name))
-    else:
-        if not rospy.has_param(name):
-            rospy.logfatal("Parameter [%s] not found" % (name))
-            raise Exception('Required parameter {0} not found'.format(name))
-    return rospy.get_param(name, None)
+    return node.get_parameter(name).value
 
 
-def solve_namespace(namespace=None):
+def solve_namespace(namespace=None, node=None):
     """
     Appends neccessary slashes required for a proper ROS namespace.
     @type namespace: string
     @param namespace: namespace to be fixed.
+    @type node: rclpy.node.Node
+    @param node: node used to resolve the current namespace when C{namespace} is empty.
     @rtype: string
     @return: Proper ROS namespace.
     """
     if namespace is None or len(namespace) == 0:
-        namespace = rospy.get_namespace()
+        namespace = node.get_namespace() if node is not None else '/'
+        if not namespace.endswith('/'):
+            namespace += '/'
     elif len(namespace) == 1:
         if namespace != '/':
             namespace = '/' + namespace + '/'

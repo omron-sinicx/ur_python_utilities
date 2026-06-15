@@ -152,7 +152,7 @@ def to_quaternion(array):
   @rtype: geometry_msgs/Quaternion
   @return: The resulting ROS message
   """
-    return Quaternion(*array)
+    return Quaternion(x=float(array[0]), y=float(array[1]), z=float(array[2]), w=float(array[3]))
 
 
 def to_point(array):
@@ -163,7 +163,7 @@ def to_point(array):
   @rtype: geometry_msgs/Point
   @return: The resulting ROS message
   """
-    return Point(*array)
+    return Point(x=float(array[0]), y=float(array[1]), z=float(array[2]))
 
 
 def to_pose(T):
@@ -176,15 +176,15 @@ def to_pose(T):
   """
     T = np.array(T, dtype=float)
     if len(T) == 6:
-        pos = Point(*T[:3])
-        quat = Quaternion(*tr.quaternion_from_euler(*T[3:]))
+        pos = to_point(T[:3])
+        quat = to_quaternion(tr.quaternion_from_euler(*T[3:]))
     elif len(T) == 7:
-        pos = Point(*T[:3])
+        pos = to_point(T[:3])
         quat = to_quaternion(T[3:])
     else:
-        pos = Point(*T[:3, 3])
-        quat = Quaternion(*tr.rotation_matrix_from_quaternion(T))
-    return Pose(pos, quat)
+        pos = to_point(T[:3, 3])
+        quat = to_quaternion(tr.rotation_matrix_from_quaternion(T))
+    return Pose(position=pos, orientation=quat)
 
 
 def to_roi(top_left, bottom_right):
@@ -206,12 +206,12 @@ def to_transform(T):
   @return: The resulting ROS message
   """
     if len(T) == 7:
-        translation = Vector3(*T[:3])
+        translation = to_vector3(T[:3])
         rotation = to_quaternion(T[3:])
     else:
-        translation = Vector3(*T[:3, 3])
-        rotation = Quaternion(*tr.rotation_matrix_from_quaternion(T))
-    return Transform(translation, rotation)
+        translation = to_vector3(T[:3, 3])
+        rotation = to_quaternion(tr.rotation_matrix_from_quaternion(T))
+    return Transform(translation=translation, rotation=rotation)
 
 
 def to_vector3(array):
@@ -222,7 +222,7 @@ def to_vector3(array):
   @rtype: geometry_msgs/Vector3
   @return: The resulting ROS message
   """
-    return Vector3(*array)
+    return Vector3(x=float(array[0]), y=float(array[1]), z=float(array[2]))
 
 
 def to_wrench(array):
@@ -334,7 +334,7 @@ def transform_pose(target_frame, transform_matrix, ps):
     r = PoseStamped()
     r.header.stamp = ps.header.stamp
     r.header.frame_id = target_frame
-    r.pose = Pose(Point(*xyz), Quaternion(*quat))
+    r.pose = Pose(position=to_point(xyz), orientation=to_quaternion(quat))
     return r
 
 
