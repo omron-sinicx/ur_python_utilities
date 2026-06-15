@@ -27,11 +27,17 @@
 # ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import os
+import re
+import time
+
 import numpy as np
 import PyKDL
 
-import rospy
-import rospkg
+import rclpy
+from rclpy.qos import QoSProfile, DurabilityPolicy, HistoryPolicy
+from std_msgs.msg import String
+from ament_index_python.packages import get_package_share_directory
 
 from ur_kdl.kdl_parser import kdl_tree_from_urdf_model
 from urdf_parser_py.urdf import URDF
@@ -72,20 +78,57 @@ def frame_to_list(frame):
                      rot[0], rot[1], rot[2], rot[3]])
 
 
+def get_robot_description(node, topic='/robot_description', timeout=10.0):
+    """Fetch the URDF string from the (transient-local) robot_description topic.
+
+    Replaces ROS 1's ``URDF.from_parameter_server()`` (ROS 2 has no global parameter
+    server). Requires ``node`` to be spun by an executor in a background thread.
+    """
+    qos = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL,
+                     history=HistoryPolicy.KEEP_LAST)
+    holder = {}
+    sub = node.create_subscription(String, topic, lambda m: holder.setdefault('urdf', m.data), qos)
+    start = time.time()
+    while 'urdf' not in holder and (time.time() - start) < timeout and rclpy.ok():
+        time.sleep(0.05)
+    node.destroy_subscription(sub)
+    return holder.get('urdf')
+
+
+def _parse_urdf(xml_string):
+    """Parse a URDF string into a urdf_parser_py model.
+
+    Strips a leading ``<?xml ... ?>`` declaration first: urdf_parser_py feeds the
+    string to lxml, which rejects unicode strings that carry an encoding declaration.
+    """
+    xml_string = re.sub(r"<\?xml[^>]*\?>", "", xml_string, count=1).lstrip()
+    return URDF.from_xml_string(xml_string)
+
+
 class ur_kinematics(object):
     """
     UR Kinematics with PyKDL
     """
 
-    def __init__(self, base_link=None, ee_link=None, robot=None, prefix=None, rospackage=None):
+    def __init__(self, base_link=None, ee_link=None, robot=None, prefix=None,
+                 rospackage=None, node=None, robot_description=None):
+        # Source the URDF: from a packaged file (robot=...), a URDF string
+        # (robot_description=...), or the /robot_description topic (node=...).
         if robot:
-            rospack = rospkg.RosPack()
-            rospackage_ = rospackage if rospackage is not None else 'ur_pykdl'
-            pykdl_dir = rospack.get_path(rospackage_)
-            TREE_PATH = pykdl_dir + '/urdf/' + robot + '.urdf'
-            self._ur = URDF.from_xml_file(TREE_PATH)
+            pkg_dir = get_package_share_directory(rospackage if rospackage is not None else 'ur_pykdl')
+            TREE_PATH = os.path.join(pkg_dir, 'urdf', robot + '.urdf')
+            with open(TREE_PATH, 'r') as f:
+                self._ur = _parse_urdf(f.read())
+        elif robot_description:
+            self._ur = _parse_urdf(robot_description)
+        elif node is not None:
+            urdf_str = get_robot_description(node)
+            if not urdf_str:
+                raise RuntimeError("ur_kinematics: could not obtain URDF from /robot_description")
+            self._ur = _parse_urdf(urdf_str)
         else:
-            self._ur = URDF.from_parameter_server()
+            raise ValueError("ur_kinematics requires one of: robot (packaged file), "
+                             "robot_description (URDF string), or node (/robot_description topic)")
 
         self._kdl_tree = kdl_tree_from_urdf_model(self._ur)
         self._base_link = BASE_LINK if base_link is None else base_link

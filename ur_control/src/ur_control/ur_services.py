@@ -1,12 +1,13 @@
 
-import rospy
 import time
 
-import controller_manager_msgs.msg
+import rclpy
+import controller_manager_msgs.srv
 import std_srvs.srv
 from ur_control import conversions
-from ur_control.utils import solve_namespace
+from ur_control.utils import solve_namespace, read_parameter
 import ur_dashboard_msgs.srv
+import ur_dashboard_msgs.msg
 import ur_msgs.srv
 
 from std_msgs.msg import Bool
@@ -18,50 +19,60 @@ def check_for_real_robot(func):
     def wrap(*args, **kwargs):
         if args[0].use_real_robot:
             return func(*args, **kwargs)
-        rospy.logdebug("Ignoring function %s since no real robot is being used" % func.__name__)
+        args[0].node.get_logger().debug("Ignoring function %s since no real robot is being used" % func.__name__)
         return True
     return wrap
 
 
 class URServices():
     """
-    Universal Robots driver specific services
+    Universal Robots driver specific services.
+
+    Requires a spinning rclpy node (MultiThreadedExecutor in a background thread): the
+    synchronous ``client.call`` calls below rely on the executor processing responses.
     """
 
-    def __init__(self, namespace):
+    def __init__(self, node, namespace):
+        self.node = node
 
-        self.use_real_robot = rospy.get_param("use_real_robot", False)
+        self.use_real_robot = read_parameter(node, "use_real_robot", False)
 
-        self.ns = solve_namespace(namespace)
+        self.ns = solve_namespace(namespace, node=node)
 
         self.ur_ros_control_running_on_robot = False
         self.robot_safety_mode = None
         self.robot_status = dict()
 
         self.ur_dashboard_clients = {
-            "get_loaded_program":     rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/get_loaded_program', ur_dashboard_msgs.srv.GetLoadedProgram),
-            "program_running":        rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/program_running', ur_dashboard_msgs.srv.IsProgramRunning),
-            "load_program":           rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/load_program', ur_dashboard_msgs.srv.Load),
-            "play":                   rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/play', std_srvs.srv.Trigger),
-            "stop":                   rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/stop', std_srvs.srv.Trigger),
-            "quit":                   rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/quit', std_srvs.srv.Trigger),
-            "connect":                rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/connect', std_srvs.srv.Trigger),
-            "close_popup":            rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/close_popup', std_srvs.srv.Trigger),
-            "unlock_protective_stop": rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/unlock_protective_stop', std_srvs.srv.Trigger),
-            "is_in_remote_control":   rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/is_in_remote_control', ur_dashboard_msgs.srv.IsInRemoteControl),
-            "get_program_state":   rospy.ServiceProxy(self.ns + 'ur_hardware_interface/dashboard/program_state', ur_dashboard_msgs.srv.GetProgramState),
+            "get_loaded_program":     node.create_client(ur_dashboard_msgs.srv.GetLoadedProgram, self.ns + 'ur_hardware_interface/dashboard/get_loaded_program'),
+            "program_running":        node.create_client(ur_dashboard_msgs.srv.IsProgramRunning, self.ns + 'ur_hardware_interface/dashboard/program_running'),
+            "load_program":           node.create_client(ur_dashboard_msgs.srv.Load, self.ns + 'ur_hardware_interface/dashboard/load_program'),
+            "play":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/play'),
+            "stop":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/stop'),
+            "quit":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/quit'),
+            "connect":                node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/connect'),
+            "close_popup":            node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/close_popup'),
+            "unlock_protective_stop": node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/unlock_protective_stop'),
+            "is_in_remote_control":   node.create_client(ur_dashboard_msgs.srv.IsInRemoteControl, self.ns + 'ur_hardware_interface/dashboard/is_in_remote_control'),
+            "get_program_state":      node.create_client(ur_dashboard_msgs.srv.GetProgramState, self.ns + 'ur_hardware_interface/dashboard/program_state'),
         }
 
-        self.set_payload_srv = rospy.ServiceProxy(self.ns + 'ur_hardware_interface/set_payload', ur_msgs.srv.SetPayload)
-        self.speed_slider = rospy.ServiceProxy(self.ns + 'ur_hardware_interface/set_speed_slider', ur_msgs.srv.SetSpeedSliderFraction)
+        self.set_payload_srv = node.create_client(ur_msgs.srv.SetPayload, self.ns + 'ur_hardware_interface/set_payload')
+        self.speed_slider = node.create_client(ur_msgs.srv.SetSpeedSliderFraction, self.ns + 'ur_hardware_interface/set_speed_slider')
 
-        self.set_io = rospy.ServiceProxy(self.ns + 'ur_hardware_interface/set_io', ur_msgs.srv.SetIO)
+        self.set_io = node.create_client(ur_msgs.srv.SetIO, self.ns + 'ur_hardware_interface/set_io')
 
-        self.sub_status_ = rospy.Subscriber(self.ns + 'ur_hardware_interface/robot_program_running', Bool, self.ros_control_status_callback)
-        self.service_proxy_list = rospy.ServiceProxy(self.ns + 'controller_manager/list_controllers', controller_manager_msgs.srv.ListControllers)
-        self.service_proxy_switch = rospy.ServiceProxy(self.ns + 'controller_manager/switch_controller', controller_manager_msgs.srv.SwitchController)
+        self.sub_status_ = node.create_subscription(Bool, self.ns + 'ur_hardware_interface/robot_program_running', self.ros_control_status_callback, 10)
+        self.service_proxy_list = node.create_client(controller_manager_msgs.srv.ListControllers, self.ns + 'controller_manager/list_controllers')
+        self.service_proxy_switch = node.create_client(controller_manager_msgs.srv.SwitchController, self.ns + 'controller_manager/switch_controller')
 
-        self.sub_robot_safety_mode = rospy.Subscriber(self.ns + 'ur_hardware_interface/safety_mode', ur_dashboard_msgs.msg.SafetyMode, self.safety_mode_callback)
+        self.sub_robot_safety_mode = node.create_subscription(ur_dashboard_msgs.msg.SafetyMode, self.ns + 'ur_hardware_interface/safety_mode', self.safety_mode_callback, 10)
+
+    def _call(self, client, request=None):
+        """Synchronous service call; builds an empty request of the client's type if none given."""
+        if request is None:
+            request = client.srv_type.Request()
+        return client.call(request)
 
     @check_for_real_robot
     def safety_mode_callback(self, msg):
@@ -91,28 +102,29 @@ class URServices():
             return True
 
         service_client = self.ur_dashboard_clients["unlock_protective_stop"]
-        request = std_srvs.srv.TriggerRequest()
+        request = std_srvs.srv.Trigger.Request()
         start_time = time.time()
-        rospy.loginfo("Attempting to unlock protective stop of " + self.ns)
-        while not rospy.is_shutdown():
+        self.node.get_logger().info("Attempting to unlock protective stop of " + self.ns)
+        response = None
+        while rclpy.ok():
             response = service_client.call(request)
             if time.time() - start_time > 20.0:
-                rospy.logerr("Timeout of 20s exceeded in unlock protective stop")
+                self.node.get_logger().error("Timeout of 20s exceeded in unlock protective stop")
                 break
             if response.success:
                 break
-            rospy.sleep(0.2)
-        self.ur_dashboard_clients["stop"].call(std_srvs.srv.TriggerRequest())
-        if not response.success:
-            rospy.logwarn("Could not unlock protective stop of " + self.ns + "!")
-        return response.success
+            time.sleep(0.2)
+        self._call(self.ur_dashboard_clients["stop"])
+        if response is None or not response.success:
+            self.node.get_logger().warn("Could not unlock protective stop of " + self.ns + "!")
+        return bool(response and response.success)
 
     @check_for_real_robot
     def set_speed_scale(self, scale):
         try:
-            self.speed_slider(ur_msgs.srv.SetSpeedSliderFractionRequest(speed_slider_fraction=scale))
-        except:
-            rospy.logerr("Failed to communicate with Dashboard when setting speed slider")
+            self.speed_slider.call(ur_msgs.srv.SetSpeedSliderFraction.Request(speed_slider_fraction=float(scale)))
+        except Exception:
+            self.node.get_logger().error("Failed to communicate with Dashboard when setting speed slider")
             return False
 
     @check_for_real_robot
@@ -123,36 +135,34 @@ class URServices():
         """
         self.activate_ros_control_on_ur()
         try:
-            payload = ur_msgs.srv.SetPayloadRequest()
-            payload.payload = mass
+            payload = ur_msgs.srv.SetPayload.Request()
+            payload.mass = float(mass)
             payload.center_of_gravity = conversions.to_vector3(center_of_gravity)
-            self.set_payload_srv(payload)
+            self.set_payload_srv.call(payload)
             return True
         except Exception as e:
-            rospy.logerr("Exception trying to set payload: %s" % e)
+            self.node.get_logger().error("Exception trying to set payload: %s" % e)
         return False
 
     def call_service(self, service_name, wait_time=0, retry=True):
         try:
-            response = self.ur_dashboard_clients[service_name].call()
-            rospy.logdebug(f"{service_name} {response=}")
-            rospy.sleep(wait_time)
+            response = self._call(self.ur_dashboard_clients[service_name])
+            self.node.get_logger().debug(f"{service_name} {response=}")
+            time.sleep(wait_time)
             return response
-        except rospy.ServiceException as e:
-            if retry and "Failed to send request to dashboard server" in e.args[0]:
-                rospy.logwarn("Call to service failed, retrying connection to dashboard")
+        except Exception as e:
+            if retry and len(e.args) and "Failed to send request to dashboard server" in str(e.args[0]):
+                self.node.get_logger().warn("Call to service failed, retrying connection to dashboard")
                 if self.reset_connection():
                     return self.call_service(service_name, retry=False)
-            rospy.logerr("Unable to automatically activate robot. Manually activate the robot by pressing 'play' in the polyscope or turn ON the remote control mode.")
+            self.node.get_logger().error("Unable to automatically activate robot. Manually activate the robot by pressing 'play' in the polyscope or turn ON the remote control mode.")
             raise e
 
     @check_for_real_robot
     def wait_for_control_status_to_turn_on(self, wait_time):
-        start = rospy.Time.now()
-        elapsed = rospy.Time.now() - start
-        while elapsed < rospy.Duration(wait_time) and not rospy.is_shutdown():
-            elapsed = rospy.Time.now() - start
-            rospy.logdebug(f'{self.ur_ros_control_running_on_robot=}')
+        start = time.time()
+        while (time.time() - start) < wait_time and rclpy.ok():
+            self.node.get_logger().debug(f'{self.ur_ros_control_running_on_robot=}')
             if self.ur_ros_control_running_on_robot:
                 response = self.call_service('get_program_state')
                 if response.success:
@@ -161,35 +171,35 @@ class URServices():
                     else:
                         self.call_service('stop')
                         self.call_service('play')
-            rospy.sleep(.1)
+            time.sleep(.1)
         return False
 
     @check_for_real_robot
     def reset_connection(self):
         try:
-            rospy.logdebug("Try to quit before connecting.")
-            response = self.ur_dashboard_clients["quit"].call()
-        except:
+            self.node.get_logger().debug("Try to quit before connecting.")
+            response = self._call(self.ur_dashboard_clients["quit"])
+        except Exception:
             # Ignore failures trying to reset if we cannot communicate with dashboard
             pass
 
         try:
-            rospy.logdebug("Try to connect to dashboard service.")
-            response = self.ur_dashboard_clients["connect"].call()
+            self.node.get_logger().debug("Try to connect to dashboard service.")
+            response = self._call(self.ur_dashboard_clients["connect"])
             return response.success
-        except Exception as e:
-            rospy.logerr("Unable to reset connection...")
+        except Exception:
+            self.node.get_logger().error("Unable to reset connection...")
             return False
 
     @check_for_real_robot
     def restart_program(self):
-        rospy.logdebug("Try to stop program.")
+        self.node.get_logger().debug("Try to stop program.")
         response = self.call_service('stop')
-        rospy.sleep(1)
+        time.sleep(1)
         if response.success:
-            rospy.logdebug("Try to play program.")
+            self.node.get_logger().debug("Try to play program.")
             response = self.call_service('play')
-            rospy.sleep(1)
+            time.sleep(1)
         return response.success
 
     @check_for_real_robot
@@ -197,56 +207,47 @@ class URServices():
         if not self.use_real_robot:
             return True
 
-        # 1. check that the controller is working fine first
-        # a. check that the robot_program_running is True
-        # b. check that the get_program_state is PLAYING
-
-        # Failure recovery
-        # 1. if calling any of the services does not work, reset the connection and check if the controller is fine
-        # 2. check what program is running and update if necessary and check if the controller is fine
-        # 3. if the robot_program_running if true but the robot state is PAUSED then stop and play
-
         # Check if URCap is already running on UR
         if self.wait_for_control_status_to_turn_on(1.0):
-            rospy.logdebug("Robot program is running")
+            self.node.get_logger().debug("Robot program is running")
             return True
         else:
-            rospy.loginfo("Robot program not running for " + self.ns)
+            self.node.get_logger().info("Robot program not running for " + self.ns)
 
         try:
             response = self.call_service('is_in_remote_control')
             if not response.success or not response.in_remote_control:
-                rospy.logerr(">> Unable to automatically activate robot. Manually activate the robot by pressing 'play' in the polyscope or turn ON the remote control mode.")
+                self.node.get_logger().error(">> Unable to automatically activate robot. Manually activate the robot by pressing 'play' in the polyscope or turn ON the remote control mode.")
                 return False
-        except:
+        except Exception:
             pass
 
-        rospy.logwarn(f"Attempt to reconnect # {recursion_depth+1}")
+        self.node.get_logger().warn(f"Attempt to reconnect # {recursion_depth+1}")
 
         if recursion_depth > 10:
-            rospy.logerr("Tried too often. Breaking out.")
-            rospy.logerr("Could not start UR ROS control.")
+            self.node.get_logger().error("Tried too often. Breaking out.")
+            self.node.get_logger().error("Could not start UR ROS control.")
             raise Exception("Could not activate ROS control on robot " + self.ns + ". Breaking out. Is the UR in Remote Control mode and program installed with correct name?")
 
-        if rospy.is_shutdown():
+        if not rclpy.ok():
             return False
 
         program_loaded = self.check_loaded_program()
 
         if not program_loaded:
-            rospy.logwarn("Could not load.")
+            self.node.get_logger().warn("Could not load.")
         else:
             # Run the program
-            rospy.loginfo("Running the program (play)")
+            self.node.get_logger().info("Running the program (play)")
             self.restart_program()
 
         if self.wait_for_control_status_to_turn_on(2.0):
             if self.check_for_dead_controller_and_force_start():
-                rospy.loginfo("Successfully activated ROS control on robot " + self.ns)
+                self.node.get_logger().info("Successfully activated ROS control on robot " + self.ns)
                 self.set_speed_scale(scale=1.0)  # Set speed to max always
                 return True
         else:
-            rospy.logwarn("Failed to start program")
+            self.node.get_logger().warn("Failed to start program")
             self.reset_connection()
             return self.activate_ros_control_on_ur(recursion_depth=recursion_depth+1)
 
@@ -254,48 +255,46 @@ class URServices():
     def check_loaded_program(self):
         try:
             # Load program if it not loaded already
-            response = self.ur_dashboard_clients["get_loaded_program"].call(ur_dashboard_msgs.srv.GetLoadedProgramRequest())
+            response = self._call(self.ur_dashboard_clients["get_loaded_program"])
             if response.program_name == '/programs/ROS_external_control.urp':
                 return True
             else:
-                rospy.loginfo("Currently loaded program was:  " + response.program_name)
-                rospy.loginfo("Loading ROS control on robot " + self.ns)
-                request = ur_dashboard_msgs.srv.LoadRequest()
+                self.node.get_logger().info("Currently loaded program was:  " + response.program_name)
+                self.node.get_logger().info("Loading ROS control on robot " + self.ns)
+                request = ur_dashboard_msgs.srv.Load.Request()
                 request.filename = "ROS_external_control.urp"
                 response = self.ur_dashboard_clients["load_program"].call(request)
                 if response.success:  # Try reconnecting to dashboard
                     return True
                 else:
-                    rospy.logerr("Could not load the ROS_external_control.urp URCap. Is the UR in Remote Control mode and program installed with correct name?")
+                    self.node.get_logger().error("Could not load the ROS_external_control.urp URCap. Is the UR in Remote Control mode and program installed with correct name?")
                 for i in range(10):
-                    rospy.sleep(0.2)
-                    # rospy.loginfo("After-load check nr. " + str(i))
-                    response = self.ur_dashboard_clients["get_loaded_program"].call(ur_dashboard_msgs.srv.GetLoadedProgramRequest())
-                    # rospy.loginfo("Received response: " + response.program_name)
+                    time.sleep(0.2)
+                    response = self._call(self.ur_dashboard_clients["get_loaded_program"])
                     if response.program_name == '/programs/ROS_external_control.urp':
                         break
-        except:
-            rospy.logwarn("Dashboard service did not respond!")
+        except Exception:
+            self.node.get_logger().warn("Dashboard service did not respond!")
         return False
 
     @check_for_real_robot
     def check_for_dead_controller_and_force_start(self):
-        list_req = controller_manager_msgs.srv.ListControllersRequest()
-        switch_req = controller_manager_msgs.srv.SwitchControllerRequest()
-        rospy.loginfo("Checking for dead controllers for robot " + self.ns)
+        list_req = controller_manager_msgs.srv.ListControllers.Request()
+        switch_req = controller_manager_msgs.srv.SwitchController.Request()
+        self.node.get_logger().info("Checking for dead controllers for robot " + self.ns)
         list_res = self.service_proxy_list.call(list_req)
         for c in list_res.controller:
-            if c.name == "scaled_pos_joint_traj_controller":
-                if c.state == "stopped":
+            if c.name == "scaled_joint_trajectory_controller":
+                if c.state == "inactive":
                     # Force restart
-                    rospy.logwarn("Force restart of controller")
-                    switch_req.start_controllers = ['scaled_pos_joint_traj_controller']
+                    self.node.get_logger().warn("Force restart of controller")
+                    switch_req.activate_controllers = ['scaled_joint_trajectory_controller']
                     switch_req.strictness = 1
                     switch_res = self.service_proxy_switch.call(switch_req)
-                    rospy.sleep(1)
+                    time.sleep(1)
                     return switch_res.ok
                 else:
-                    rospy.loginfo("Controller state is " + c.state + ", returning True.")
+                    self.node.get_logger().info("Controller state is " + c.state + ", returning True.")
                     return True
 
     @check_for_real_robot
@@ -312,71 +311,69 @@ class URServices():
             return True
 
         if recursion_depth > 10:
-            rospy.logerr("Tried too often. Breaking out.")
-            rospy.logerr("Could not load " + program_name + ". Is the UR in Remote Control mode and program installed with correct name?")
+            self.node.get_logger().error("Tried too often. Breaking out.")
+            self.node.get_logger().error("Could not load " + program_name + ". Is the UR in Remote Control mode and program installed with correct name?")
             return False
 
         load_success = False
         try:
             # Try to stop running program
-            self.ur_dashboard_clients["stop"].call(std_srvs.srv.TriggerRequest())
-            rospy.sleep(.5)
+            self._call(self.ur_dashboard_clients["stop"])
+            time.sleep(.5)
 
             # Load program if it not loaded already
-            response = self.ur_dashboard_clients["get_loaded_program"].call(ur_dashboard_msgs.srv.GetLoadedProgramRequest())
-            # print("response:")
-            # print(response)
+            response = self._call(self.ur_dashboard_clients["get_loaded_program"])
             if response.program_name == '/programs/' + program_name:
                 return True
             else:
-                rospy.loginfo("Loaded program is different %s. Attempting to load new program %s" % (response.program_name, program_name))
-                request = ur_dashboard_msgs.srv.LoadRequest()
+                self.node.get_logger().info("Loaded program is different %s. Attempting to load new program %s" % (response.program_name, program_name))
+                request = ur_dashboard_msgs.srv.Load.Request()
                 request.filename = program_name
                 response = self.ur_dashboard_clients["load_program"].call(request)
                 if response.success:  # Try reconnecting to dashboard
                     load_success = True
                     return True
                 else:
-                    rospy.logerr("Could not load " + program_name + ". Is the UR in Remote Control mode and program installed with correct name?")
-        except:
-            rospy.logwarn("Dashboard service did not respond to load_program!")
+                    self.node.get_logger().error("Could not load " + program_name + ". Is the UR in Remote Control mode and program installed with correct name?")
+        except Exception:
+            self.node.get_logger().warn("Dashboard service did not respond to load_program!")
         if not load_success:
-            rospy.logwarn("Waiting and trying again")
-            rospy.sleep(3)
+            self.node.get_logger().warn("Waiting and trying again")
+            time.sleep(3)
             try:
                 if recursion_depth > 0:  # If connect alone failed, try quit and then connect
-                    response = self.ur_dashboard_clients["quit"].call()
-                    rospy.logerr("Program could not be loaded on UR: " + program_name)
-                    rospy.sleep(.5)
-            except:
-                rospy.logwarn("Dashboard service did not respond to quit! ")
+                    response = self._call(self.ur_dashboard_clients["quit"])
+                    self.node.get_logger().error("Program could not be loaded on UR: " + program_name)
+                    time.sleep(.5)
+            except Exception:
+                self.node.get_logger().warn("Dashboard service did not respond to quit! ")
                 pass
-            response = self.ur_dashboard_clients["connect"].call()
-            rospy.sleep(.5)
+            response = self._call(self.ur_dashboard_clients["connect"])
+            time.sleep(.5)
             return self.load_program(program_name=program_name, recursion_depth=recursion_depth+1)
 
     @check_for_real_robot
     def execute_loaded_program(self):
         # Run the program
         try:
-            response = self.ur_dashboard_clients["play"].call(std_srvs.srv.TriggerRequest())
+            response = self._call(self.ur_dashboard_clients["play"])
             if not response.success:
-                rospy.logerr("Could not start program. Is the UR in Remote Control mode and program installed with correct name?")
+                self.node.get_logger().error("Could not start program. Is the UR in Remote Control mode and program installed with correct name?")
                 return False
             else:
-                rospy.loginfo("Successfully started program on robot " + self.ns)
+                self.node.get_logger().info("Successfully started program on robot " + self.ns)
                 return True
         except Exception as e:
-            rospy.logerr(str(e))
+            self.node.get_logger().error(str(e))
             return False
 
     @check_for_real_robot
     def close_ur_popup(self):
         # Close a popup on the teach pendant to continue program execution
-        response = self.ur_dashboard_clients["close_popup"].call(std_srvs.srv.TriggerRequest())
+        response = self._call(self.ur_dashboard_clients["close_popup"])
         if not response.success:
-            rospy.logerr("Could not close popup.")
+            self.node.get_logger().error("Could not close popup.")
             return False
         else:
-            rospy.loginfo("Successfully closed popup on teach pendant of robot " + self.ns)
+            self.node.get_logger().info("Successfully closed popup on teach pendant of robot " + self.ns)
             return True
