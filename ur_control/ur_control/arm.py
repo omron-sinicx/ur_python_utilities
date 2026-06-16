@@ -34,25 +34,13 @@ from ur_control import utils, spalg, conversions, transformations
 from ur_control.exceptions import InverseKinematicsException
 from ur_control.controllers_connection import ControllersConnection
 from ur_control.controllers import JointTrajectoryController, JointVelocityController
-from ur_control.grippers import GripperController, RobotiqGripper
 from ur_control.constants import BASE_LINK, CARTESIAN_COMPLIANCE_CONTROLLER, EE_LINK,  FT_SUBSCRIBER, JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, VELOCITY_CONTROLLER_NAME,  \
     ExecutionResult, IKSolverType, GripperType, \
     get_arm_joint_names
 from ur_control.ur_services import URServices
+from ur_control.eaik_kinematics import EAIKKinematics
 
-try:
-    from ur_ikfast import ur_kinematics as ur_ikfast
-except ImportError:
-    print("Import ur_ikfast not available, IKFAST would not be supported without it")
 from ur_pykdl import ur_kinematics, get_robot_description
-try:
-    # NOTE (ROS 2): trac_ik provides only the C++ library + MoveIt plugin on Jazzy;
-    # the trac_ik_python SWIG bindings were not ported. When unavailable, the
-    # TRAC_IK solver type transparently falls back to the KDL solver (see below).
-    from trac_ik_python.trac_ik import IK as TRACK_IK_SOLVER
-except ImportError:
-    TRACK_IK_SOLVER = None
-    print("trac_ik_python not available (no ROS 2 build); IKSolverType.TRAC_IK will fall back to KDL")
 
 # ros2_control lifecycle state name for an activated controller (ROS 1 used "running").
 _ACTIVE = "active"
@@ -64,7 +52,7 @@ class Arm(object):
     def __init__(self,
                  node,
                  namespace: str = None,
-                 ik_solver: IKSolverType = IKSolverType.TRAC_IK,
+                 ik_solver: IKSolverType = IKSolverType.EAIK,
                  gripper_type: GripperType = GripperType.GENERIC,
                  ft_topic: str = None,
                  base_link: str = None,
@@ -198,8 +186,10 @@ class Arm(object):
             return
 
         if gripper_type == GripperType.GENERIC:
+            from ur_control.grippers import GripperController
             self.gripper = GripperController(self.node, namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
         elif gripper_type == GripperType.ROBOTIQ:
+            from ur_control.grippers import RobotiqGripper
             self.gripper = RobotiqGripper(self.node, namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
         else:
             raise ValueError("Invalid gripper type %s" % gripper_type)
@@ -215,31 +205,20 @@ class Arm(object):
         # Instantiate KDL kinematics solver to compute forward kinematics
         self.kdl = ur_kinematics(base_link=base_link, ee_link=ee_link, robot_description=robot_description)
 
-        # Instantiate Inverse kinematics solver
-        if self.ik_solver == IKSolverType.IKFAST:
-            # IKfast libraries
+        # Instantiate inverse kinematics solver (KDL FK is always available above).
+        self.eaik = None
+        if self.ik_solver == IKSolverType.EAIK:
             try:
-                # TODO use the parameter robot_description
-                self.arm_ikfast = ur_ikfast.URKinematics(self._robot_urdf)
-            except Exception:
-                raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
-        elif self.ik_solver == IKSolverType.TRAC_IK:
-            if TRACK_IK_SOLVER is None:
-                # No ROS 2 trac_ik_python build: degrade to the KDL solver.
-                self.node.get_logger().warn("trac_ik_python unavailable; falling back to KDL IK solver")
+                self.eaik = EAIKKinematics(self.kdl, logger=self.node.get_logger(),
+                                           robot_description=robot_description)
+            except (ImportError, ValueError) as exc:
+                self.node.get_logger().warn(
+                    "EAIK unavailable ({}); falling back to KDL IK solver".format(exc))
                 self.ik_solver = IKSolverType.KDL
-            else:
-                try:
-                    # ROS 2 trac_ik_python takes the URDF as a string (no param server).
-                    self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, urdf_string=robot_description,
-                                                   timeout=0.1, epsilon=1e-5, solve_type="Distance")
-                except Exception as e:
-                    self.node.get_logger().error("Could not instantiate TRAC_IK" + str(e))
-                    self.ik_solver = IKSolverType.KDL
         elif self.ik_solver == IKSolverType.KDL:
             pass
         else:
-            raise Exception("unsupported ik_solver", self.ik_solver)
+            raise ValueError("unsupported ik_solver: %s" % self.ik_solver)
 
     def __init_ft_sensor__(self):
         # Subscriber of wrench. Use best-effort sensor QoS (compatible with both
@@ -330,9 +309,8 @@ class Arm(object):
         seed : optional
             if given, attempt to return a joint configuration closer to the seed
         attempts : int, optional
-            number of attempts to find a IK solution. It may be useful for sample
-            based solvers such as TRAC-IK. It would not change the result of an
-            analytical solvers such as IKFast.
+            number of attempts to find an IK solution. Retries only help the
+            numerical KDL solver; analytical EAIK returns the same result.
         verbose : bool, optional
             print a warning message when IK solutions are not found
 
@@ -348,11 +326,8 @@ class Arm(object):
         """
         q_guess_ = seed if seed is not None else self.joint_angles()
 
-        if self.ik_solver == IKSolverType.IKFAST:
-            # TODO: transform pose to the default tip used by IKFast (tool0)
-            ik = self.arm_ikfast.inverse(pose, q_guess=q_guess_)
-        elif self.ik_solver == IKSolverType.TRAC_IK:
-            ik = self.trac_ik.get_ik(q_guess_, *pose)
+        if self.ik_solver == IKSolverType.EAIK:
+            ik = self.eaik.inverse_kinematics(pose, seed=q_guess_)
         elif self.ik_solver == IKSolverType.KDL:
             ik = self.kdl.inverse_kinematics(pose[:3], pose[3:], seed=q_guess_)
 
@@ -796,6 +771,6 @@ class Arm(object):
         If active, the readings returned from self.get_wrench will have been filtered.
         otherwise, the raw data from the sensor's topic will be returned.
 
-        The filtering is done in an external topic. See scripts/ft_filter.py
+        The filtering is done in an external topic. See ur_control_examples ft_filter node.
         """
         self._ft_filtered(active)

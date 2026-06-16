@@ -8,16 +8,8 @@ from sensor_msgs.msg import JointState
 from control_msgs.action import GripperCommand
 
 from ur_control import utils
-# Link attacher (optional; Gazebo sim only — ROS 2 availability pending the sim phase).
-try:
-    from gazebo_ros_link_attacher.srv import Attach
-except ImportError:
-    print("Grasping plugin can't be loaded")
 
-try:
-    import robotiq_msgs.action
-except ImportError:
-    print("Robotiq gripper can't be loaded. robotiq_msgs required.")
+
 
 
 # NOTE (ROS 2): gripper config (joint names, gripper_type, max_gap, ...) is read from
@@ -145,7 +137,7 @@ class GripperControllerBase():
 
 
 class GripperController(GripperControllerBase):
-    def __init__(self, node, namespace='', prefix=None, timeout=5.0, attach_link='robot::wrist_3_link'):
+    def __init__(self, node, namespace='', prefix=None, timeout=5.0):
         node_name = "gripper_controller"
         super().__init__(node, namespace, node_name, prefix, timeout)
         self.gripper_type = str(utils.read_parameter(node, "gripper_type", "85"))
@@ -165,17 +157,6 @@ class GripperController(GripperControllerBase):
             self._to_close = 0.001
             self._max_angle = 0.69
 
-        attach_plugin = utils.read_parameter(node, "grasp_plugin", False)
-        if attach_plugin:
-            try:
-                # gazebo_ros link attacher
-                self.attach_link = attach_link
-                self.attach_srv = node.create_client(Attach, '/link_attacher_node/attach')
-                self.detach_srv = node.create_client(Attach, '/link_attacher_node/detach')
-                self.attach_srv.wait_for_service()
-                self.detach_srv.wait_for_service()
-            except Exception:
-                self.node.get_logger().error("Fail to load grasp plugin services. Make sure to launch the right Gazebo world!")
         # Gripper action server
         action_server = self.ns + node_name + '/gripper_cmd'
         self._client = ActionClient(node, GripperCommand, action_server)
@@ -247,30 +228,8 @@ class GripperController(GripperControllerBase):
     def get_state(self):
         return self._status
 
-    def grab(self, link_name):
-        parent = self.attach_link.split('::')
-        child = link_name.split('::')
-        req = Attach.Request()
-        req.model_name_1 = parent[0]
-        req.link_name_1 = parent[1]
-        req.model_name_2 = child[0]
-        req.link_name_2 = child[1]
-        res = self.attach_srv.call(req)
-        return res.ok
-
     def open(self, wait=True):
         return self.command(1.0, percentage=True, wait=wait)
-
-    def release(self, link_name):
-        parent = self.attach_link.rsplit('::')
-        child = link_name.rsplit('::')
-        req = Attach.Request()
-        req.model_name_1 = parent[0]
-        req.link_name_1 = parent[1]
-        req.model_name_2 = child[0]
-        req.link_name_2 = child[1]
-        res = self.detach_srv.call(req)
-        return res.ok
 
     def stop(self):
         if self._goal_handle is not None:
@@ -295,6 +254,11 @@ class GripperController(GripperControllerBase):
 
 
 class RobotiqGripper(GripperControllerBase):
+    try:
+        import robotiq_msgs.action
+    except ImportError:
+        print("Robotiq gripper can't be loaded. robotiq_msgs required.")
+
     def __init__(self, node, namespace="", prefix="", timeout=2):
         node_name = "gripper_action_controller"
         super().__init__(node, namespace, node_name, prefix, timeout)

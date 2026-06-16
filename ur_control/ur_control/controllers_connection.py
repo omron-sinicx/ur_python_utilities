@@ -9,7 +9,7 @@ from ur_control.utils import solve_namespace, read_parameter
 
 
 # ros2_control lifecycle state name for an activated controller (ROS 1 used "running").
-_ACTIVE = "active"
+ACTIVE = "active"
 
 
 class ControllersConnection():
@@ -92,7 +92,7 @@ class ControllersConnection():
         """
         controllers_to_switch = []
         for c in on_controllers:
-            if c is not None and self.get_controller_state(c) != _ACTIVE:
+            if c is not None and self.get_controller_state(c) != ACTIVE:
                 controllers_to_switch.append(c)
         return controllers_to_switch
 
@@ -104,7 +104,7 @@ class ControllersConnection():
         for c in off_controllers:
             if c is not None:
                 state = self.get_controller_state(c)
-                if state == _ACTIVE:
+                if state == ACTIVE:
                     controllers_to_switch.append(c)
         return controllers_to_switch
 
@@ -153,7 +153,7 @@ class ControllersConnection():
             while (time.time() - start_time) < 5.0 and rclpy.ok():
                 all_active = True
                 for controller in controllers_on:
-                    if self.get_controller_state(controller) != _ACTIVE:
+                    if self.get_controller_state(controller) != ACTIVE:
                         all_active = False
                         break
                 if all_active:

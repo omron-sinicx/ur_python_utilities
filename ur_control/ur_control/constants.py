@@ -3,8 +3,7 @@ from enum import Enum
 
 class IKSolverType(Enum):
     KDL = 'kdl'
-    TRAC_IK = 'Trac-IK'
-    IKFAST = 'IKFast'
+    EAIK = 'eaik'
 
 
 class GripperType(Enum):
