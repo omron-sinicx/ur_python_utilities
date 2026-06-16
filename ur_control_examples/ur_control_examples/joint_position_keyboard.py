@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 # The MIT License (MIT)
 #
 # Copyright (c) 2018-2021 Cristian Beltran
@@ -24,26 +22,32 @@
 #
 # Author: Cristian Beltran
 
-"""
-UR Joint Position Example: keyboard
-"""
+"""UR Joint Position Example: keyboard control (ROS 2)."""
+
 import argparse
-
-import rospy
-
-from ur_control.arm import Arm
-from ur_control import transformations
-
-import getch
+import sys
+import threading
+import time
 
 import numpy as np
+import rclpy
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.utilities import remove_ros_args
 
+from ur_control import transformations
+from ur_control.arm import Arm
 from ur_control.constants import GripperType
+from ur_control.getch import getch
+
 np.set_printoptions(linewidth=np.inf)
 np.set_printoptions(suppress=True)
 
 
-def map_keyboard():
+def map_keyboard(arm, relative_to_tcp):
+    delta_q = np.deg2rad(1.0)
+    delta_x = 0.005
+
     def print_robot_state():
         print("Joint angles:", np.round(arm.joint_angles(), 4).tolist())
         print("EE Pose:", np.round(arm.end_effector(), 5).tolist())
@@ -54,25 +58,22 @@ def map_keyboard():
             print("Gripper percentage:", np.round(arm.gripper.get_opening_percentage(), 4))
 
     def set_j(joint_name, sign):
-        global delta_q
+        nonlocal delta_q
         current_position = arm.joint_angles()
         current_position[joint_name] += delta_q * sign
         arm.set_joint_positions(positions=current_position, target_time=0.25)
 
     def update_d(delta, increment):
+        nonlocal delta_q, delta_x
         if delta == 'q':
-            global delta_q
             delta_q += np.deg2rad(increment)
             print(("delta_q", np.rad2deg(delta_q)))
         if delta == 'x':
-            global delta_x
             delta_x += increment
             print(("delta_x", delta_x))
 
     def set_pose_ik(dim, sign):
-        global delta_x
-        global delta_q
-
+        nonlocal delta_q, delta_x
         x = arm.end_effector()
         delta = np.zeros(6)
 
@@ -94,11 +95,6 @@ def map_keyboard():
         cpose = arm.gripper.get_position()
         cpose += delta
         arm.gripper.command(cpose)
-
-    global delta_q
-    global delta_x
-    delta_q = np.deg2rad(1.0)
-    delta_x = 0.005
 
     bindings = {
         #   key: (function, args, description)
@@ -143,16 +139,14 @@ def map_keyboard():
     }
     done = False
     print("Controlling joints. Press ? for help, Esc to quit.")
-    while not done and not rospy.is_shutdown():
-        c = getch.getch()
+    while not done and rclpy.ok():
+        c = getch()
         if c:
             # catch Esc or ctrl-c
             if c in ['\x1b', '\x03']:
                 done = True
-                rospy.signal_shutdown("Example finished.")
             elif c in bindings:
                 cmd = bindings[c]
-                # expand binding to something like "set_j(right, 's0', 0.1)"
                 cmd[0](*cmd[1])
                 print(("command: %s" % (cmd[2], )))
             else:
@@ -164,15 +158,13 @@ def map_keyboard():
                     print(("  %s: %s" % (key, val[2])))
 
 
-def main():
+def main(args=None):
     """Joint Position Example: Keyboard Control
 
     Use your dev machine's keyboard to control joint positions.
 
     Each key corresponds to increasing or decreasing the angle
-    of a joint on one of Baxter's arms. Each arm is represented
-    by one side of the keyboard and inner/outer key pairings
-    on each row for each joint.
+    of a joint on the robot arm.
     """
     epilog = """
 See help inside the example with the '?' key for key bindings.
@@ -190,32 +182,42 @@ See help inside the example with the '?' key for key bindings.
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
 
-    args = parser.parse_args(rospy.myargv()[1:])
+    argv = remove_ros_args(args if args is not None else sys.argv)
+    cli_args = parser.parse_args(argv[1:])
 
-    rospy.init_node("joint_position_keyboard", log_level=rospy.INFO)
+    rclpy.init(args=args)
+    node = Node("joint_position_keyboard")
 
-    global relative_to_tcp
-    relative_to_tcp = args.relative
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
+    spin_thread.start()
+    time.sleep(1.0)
 
-    tcp_link = args.tcp
-    joints_prefix = args.namespace + '_' if args.namespace else None
-    if args.gripper == 'robotiq':
-        gripper = GripperType.ROBOTIQ
-    elif args.gripper == 'generic':
-        gripper = GripperType.GENERIC
-    else:
-        gripper = None
+    try:
+        tcp_link = cli_args.tcp
+        joints_prefix = cli_args.namespace + '_' if cli_args.namespace else None
+        if cli_args.gripper == 'robotiq':
+            gripper = GripperType.ROBOTIQ
+        elif cli_args.gripper == 'generic':
+            gripper = GripperType.GENERIC
+        else:
+            gripper = None
 
-    global arm
-    arm = Arm(namespace=args.namespace,
-              gripper_type=None,
-              joint_names_prefix=joints_prefix,
-              ee_link=tcp_link)
+        arm = Arm(node,
+                  namespace=cli_args.namespace,
+                  gripper_type=gripper,
+                  joint_names_prefix=joints_prefix,
+                  ee_link=tcp_link)
 
-    arm.dashboard_services.activate_ros_control_on_ur()
+        arm.dashboard_services.activate_ros_control_on_ur()
 
-    map_keyboard()
-    print("Done.")
+        map_keyboard(arm, relative_to_tcp=cli_args.relative)
+        print("Done.")
+    finally:
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
