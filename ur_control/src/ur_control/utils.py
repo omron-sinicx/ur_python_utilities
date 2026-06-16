@@ -370,3 +370,30 @@ def wait_for(predicate, timeout=5.0):
             return False
         time.sleep(0.001)
     return True
+
+
+class Rate:
+    """Minimal ``rospy.Rate`` replacement based on the monotonic wall clock.
+
+    ROS 2 offers ``node.create_rate()``, but that couples to a spinning executor
+    and can deadlock when called from a callback thread. This is a dependency-free
+    fixed-rate sleeper for the synchronous control loops.
+
+    NOTE: it uses the monotonic wall clock, not the ROS clock, so it is not
+    sim-time aware. Pass an explicit ``dt`` to the control models where sim-time
+    accuracy matters.
+    """
+
+    def __init__(self, hz):
+        self._period = 1.0 / float(hz)
+        self._next = time.monotonic() + self._period
+
+    def sleep(self):
+        now = time.monotonic()
+        remaining = self._next - now
+        if remaining > 0:
+            time.sleep(remaining)
+            self._next += self._period
+        else:
+            # Missed the deadline: resync to "now" to avoid a burst of catch-up sleeps.
+            self._next = now + self._period

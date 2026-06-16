@@ -23,13 +23,17 @@ class ExecutionResult(Enum):
 
 
 CARTESIAN_COMPLIANCE_CONTROLLER = 'cartesian_compliance_controller'
-JOINT_POSITION_TRAJECTORY_CONTROLLER = 'scaled_pos_joint_traj_controller'
-JOINT_VELOCITY_TRAJECTORY_CONTROLLER = 'scaled_vel_joint_traj_controller'
+# ROS 2 UR driver (ros2_control) controller names. The ROS 1 scaled *position* and
+# scaled *velocity* joint-trajectory controllers collapse into a single
+# scaled_joint_trajectory_controller; raw joint velocities are commanded through the
+# forward_velocity_controller (a forward_command_controller, not a trajectory action).
+JOINT_POSITION_TRAJECTORY_CONTROLLER = 'scaled_joint_trajectory_controller'
+JOINT_VELOCITY_TRAJECTORY_CONTROLLER = 'scaled_joint_trajectory_controller'
 JOINT_SUBSCRIBER = '/arm_controller/state'
 JOINT_STATE_SUBSCRIBER = 'joint_states'
 FT_SUBSCRIBER = 'wrench'
 
-VELOCITY_CONTROLLER_NAME = 'joint_group_vel_controller'
+VELOCITY_CONTROLLER_NAME = 'forward_velocity_controller'
 
 # Set constants for joints
 SHOULDER_PAN_JOINT = 'shoulder_pan_joint'

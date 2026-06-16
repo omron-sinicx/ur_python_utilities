@@ -23,8 +23,7 @@
 # Author: Cristian Beltran
 
 import numpy as np
-import rospy
-from ur_control.constants import JOINT_POSITION_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER, ExecutionResult
+from ur_control.constants import ExecutionResult
 
 
 def is_more_extreme(value, target):
@@ -55,6 +54,14 @@ def is_more_extreme(value, target):
     return False
 
 
+# NOTE (ROS 2): the FZI cartesian_compliance_controller exposes all of its tunables as
+# standard ROS 2 node parameters (flat, dot-separated names) instead of ROS 1
+# dynamic_reconfigure groups. The converters below return {param_name: value} dicts ready
+# for a single SetParameters call. Names match cartesian_controllers' declarations:
+#   stiffness.{trans_*,rot_*,sel_*}, pd_gains.<axis>.{p,d}, solver.*, end_effector_link, ...
+_AXES = ["trans_x", "trans_y", "trans_z", "rot_x", "rot_y", "rot_z"]
+
+
 def convert_selection_matrix_to_parameters(selection_matrix):
     """
     Convert a selection matrix to controller parameters.
@@ -63,19 +70,10 @@ def convert_selection_matrix_to_parameters(selection_matrix):
         selection_matrix (numpy.ndarray): A 6-element array representing the selection matrix
 
     Returns:
-        dict: A dictionary containing the selection matrix parameters
+        dict: {param_name: value} for stiffness.sel_* parameters
     """
-    return {
-        "stiffness":
-        {
-            "sel_x": selection_matrix[0],
-            "sel_y": selection_matrix[1],
-            "sel_z": selection_matrix[2],
-            "sel_ax": selection_matrix[3],
-            "sel_ay": selection_matrix[4],
-            "sel_az": selection_matrix[5],
-        }
-    }
+    keys = ["sel_x", "sel_y", "sel_z", "sel_ax", "sel_ay", "sel_az"]
+    return {"stiffness.%s" % k: float(selection_matrix[i]) for i, k in enumerate(keys)}
 
 
 def convert_stiffness_to_parameters(stiffness):
@@ -86,19 +84,9 @@ def convert_stiffness_to_parameters(stiffness):
         stiffness (numpy.ndarray): A 6-element array representing the stiffness values
 
     Returns:
-        dict: A dictionary containing the stiffness parameters
+        dict: {param_name: value} for stiffness.{trans_*,rot_*} parameters
     """
-    return {
-        "stiffness":
-        {
-            "trans_x": stiffness[0],
-            "trans_y": stiffness[1],
-            "trans_z": stiffness[2],
-            "rot_x": stiffness[3],
-            "rot_y": stiffness[4],
-            "rot_z": stiffness[5],
-        }
-    }
+    return {"stiffness.%s" % k: float(stiffness[i]) for i, k in enumerate(_AXES)}
 
 
 def convert_pd_gains_to_parameters(p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
@@ -110,16 +98,13 @@ def convert_pd_gains_to_parameters(p_gains, d_gains=[0, 0, 0, 0, 0, 0]):
         d_gains (numpy.ndarray, optional): A 6-element array representing the D gains. Defaults to zeros.
 
     Returns:
-        dict: A dictionary containing the P and D gain parameters
+        dict: {param_name: value} for pd_gains.<axis>.{p,d} parameters
     """
-    return {
-        "trans_x": {"p": p_gains[0], "d": d_gains[0]},
-        "trans_y": {"p": p_gains[1], "d": d_gains[1]},
-        "trans_z": {"p": p_gains[2], "d": d_gains[2]},
-        "rot_x": {"p": p_gains[3], "d": d_gains[3]},
-        "rot_y": {"p": p_gains[4], "d": d_gains[4]},
-        "rot_z": {"p": p_gains[5], "d": d_gains[5]}
-    }
+    parameters = {}
+    for i, axis in enumerate(_AXES):
+        parameters["pd_gains.%s.p" % axis] = float(p_gains[i])
+        parameters["pd_gains.%s.d" % axis] = float(d_gains[i])
+    return parameters
 
 
 def switch_cartesian_controllers(func):
@@ -144,7 +129,7 @@ def switch_cartesian_controllers(func):
         try:
             res = func(*args, **kwargs)
         except Exception as e:
-            rospy.logerr("Exception: %s" % e)
+            args[0].node.get_logger().error("Exception: %s" % e)
             res = ExecutionResult.DONE
 
         args[0].activate_joint_trajectory_controller()

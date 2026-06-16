@@ -23,11 +23,12 @@
 # Author: Cristian Beltran
 
 import collections
+import time
 import numpy as np
 
-import rospy
 from geometry_msgs.msg import WrenchStamped
 from std_srvs.srv import Empty, SetBool, Trigger
+from rclpy.qos import qos_profile_sensor_data
 
 from ur_control import utils, spalg, conversions, transformations
 from ur_control.exceptions import InverseKinematicsException
@@ -43,16 +44,25 @@ try:
     from ur_ikfast import ur_kinematics as ur_ikfast
 except ImportError:
     print("Import ur_ikfast not available, IKFAST would not be supported without it")
-from ur_pykdl import ur_kinematics
-from trac_ik_python.trac_ik import IK as TRACK_IK_SOLVER
+from ur_pykdl import ur_kinematics, get_robot_description
+try:
+    # NOTE (ROS 2): trac_ik provides only the C++ library + MoveIt plugin on Jazzy;
+    # the trac_ik_python SWIG bindings were not ported. When unavailable, the
+    # TRAC_IK solver type transparently falls back to the KDL solver (see below).
+    from trac_ik_python.trac_ik import IK as TRACK_IK_SOLVER
+except ImportError:
+    TRACK_IK_SOLVER = None
+    print("trac_ik_python not available (no ROS 2 build); IKSolverType.TRAC_IK will fall back to KDL")
 
-cprint = utils.TextColors()
+# ros2_control lifecycle state name for an activated controller (ROS 1 used "running").
+_ACTIVE = "active"
 
 
 class Arm(object):
     """ Universal Robots arm controller """
 
     def __init__(self,
+                 node,
                  namespace: str = None,
                  ik_solver: IKSolverType = IKSolverType.TRAC_IK,
                  gripper_type: GripperType = GripperType.GENERIC,
@@ -63,10 +73,14 @@ class Arm(object):
                  use_velocity_interface: bool = False,
                  robot_version: str = "UR5e",
                  skip_ros_control: bool = False):
-        """ 
+        """
 
         Parameters
         ----------
+        node : rclpy.node.Node
+            shared node, assumed to be spun by an executor (e.g. a MultiThreadedExecutor)
+            in a background thread. All sub-controllers, service clients and subscriptions
+            created here are owned by this node.
         namespace : optional
             ROS namespace of the robot e.g., '/ns/robot_description'
         ik_solver : optional
@@ -93,7 +107,8 @@ class Arm(object):
 
         """
 
-        self.ns = utils.solve_namespace(namespace)
+        self.node = node
+        self.ns = utils.solve_namespace(namespace, node=node)
 
         base_link = utils.resolve_parameter(value=base_link, default_value=BASE_LINK)
         ee_link = utils.resolve_parameter(value=ee_link, default_value=EE_LINK)
@@ -112,30 +127,37 @@ class Arm(object):
         # self.max_joint_speed = np.deg2rad([100, 100, 100, 200, 200, 200]) # deg/s -> rad/s
         self.max_joint_speed = np.deg2rad([191, 191, 191, 371, 371, 371])
 
-        cprint.ok("Initializing ur robot with parameters")
-        cprint.ok("gripper: {}, ft_sensor_topic: {}, \nbase_link: {}, ee_link: {}"
-                  .format(gripper_type, self.ft_topic, self.base_link, self.ee_link))
-
         self.use_velocity_interface = use_velocity_interface
         self.skip_ros_control = skip_ros_control
 
-        self.controller_manager = ControllersConnection(self.ns)
-        self.dashboard_services = URServices(self.ns)
+        self.node.get_logger().info("Initializing ur robot with parameters")
+        self.node.get_logger().info("gripper: {}, ft_sensor_topic: {}, base_link: {}, ee_link: {}"
+                                     .format(gripper_type, self.ft_topic, self.base_link, self.ee_link))
+
+        self.controller_manager = ControllersConnection(self.node, self.ns)
+        self.dashboard_services = URServices(self.node, self.ns)
 
         self.__init_controllers__(gripper_type, joint_names_prefix, robot_version)
         self.__init_ik_solver__(self.base_link, self.ee_link)
 
         self.__init_ft_sensor__()
 
-        rospy.on_shutdown(self.__on_shutdown__)
+        # ROS 2 has no rospy.on_shutdown; register on the node's context instead.
+        try:
+            self.node.context.on_shutdown(self.__on_shutdown__)
+        except Exception:
+            pass
 
 ### private methods ###
 
     def __on_shutdown__(self):
-        if self.use_velocity_interface:
-            # self.joint_vel_controller.stop_all_joints()
-            self.activate_joint_trajectory_controller()
-        self.joint_traj_controller.stop()
+        try:
+            if self.use_velocity_interface:
+                # self.joint_vel_controller.stop_all_joints()
+                self.activate_joint_trajectory_controller()
+            self.joint_traj_controller.stop()
+        except Exception:
+            pass
 
     def __init_controllers__(self, gripper_type, joint_names_prefix=None, robot_version="UR5e"):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
@@ -145,18 +167,25 @@ class Arm(object):
             if self.dashboard_services.activate_ros_control_on_ur():
                 in_conflict_controllers = [JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER]
                 for controller in in_conflict_controllers:
-                    if self.controller_manager.get_controller_state(controller) == "running":
+                    # get_controller_state raises if the controller is not loaded; treat that as "not active".
+                    try:
+                        state = self.controller_manager.get_controller_state(controller)
+                    except ValueError:
+                        continue
+                    if state == _ACTIVE:
                         self.running_controller_name = controller
                         break
 
         self.joint_traj_controller_name = JOINT_VELOCITY_TRAJECTORY_CONTROLLER if self.use_velocity_interface else JOINT_POSITION_TRAJECTORY_CONTROLLER
-        self.joint_traj_controller = JointTrajectoryController(publisher_name=self.joint_traj_controller_name,
+        self.joint_traj_controller = JointTrajectoryController(self.node,
+                                                               publisher_name=self.joint_traj_controller_name,
                                                                namespace=self.ns,
                                                                joint_names=self.joint_names,
                                                                timeout=1.0)
 
         if self.use_velocity_interface:
-            self.joint_vel_controller = JointVelocityController(controller_name=VELOCITY_CONTROLLER_NAME,
+            self.joint_vel_controller = JointVelocityController(self.node,
+                                                                controller_name=VELOCITY_CONTROLLER_NAME,
                                                                 namespace=self.ns,
                                                                 joint_names=self.joint_names,
                                                                 robot_version=robot_version,
@@ -165,22 +194,26 @@ class Arm(object):
         self.gripper = None
 
         if not gripper_type:
-            rospy.logwarn("Loading without gripper")
+            self.node.get_logger().warn("Loading without gripper")
             return
 
         if gripper_type == GripperType.GENERIC:
-            self.gripper = GripperController(namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
+            self.gripper = GripperController(self.node, namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
         elif gripper_type == GripperType.ROBOTIQ:
-            self.gripper = RobotiqGripper(namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
+            self.gripper = RobotiqGripper(self.node, namespace=self.ns, prefix=self.joint_names_prefix, timeout=2.0)
         else:
             raise ValueError("Invalid gripper type %s" % gripper_type)
 
     def __init_ik_solver__(self, base_link, ee_link):
+        # ROS 2 has no global parameter server; fetch the URDF from the
+        # /robot_description topic (transient-local) and share it with every solver.
+        robot_description = get_robot_description(self.node)
+        if not robot_description:
+            raise ValueError("robot_description not available on the /robot_description topic")
+        self._robot_description = robot_description
+
         # Instantiate KDL kinematics solver to compute forward kinematics
-        if rospy.has_param("robot_description"):
-            self.kdl = ur_kinematics(base_link=base_link, ee_link=ee_link)
-        else:
-            raise ValueError("robot_description not found in the parameter server")
+        self.kdl = ur_kinematics(base_link=base_link, ee_link=ee_link, robot_description=robot_description)
 
         # Instantiate Inverse kinematics solver
         if self.ik_solver == IKSolverType.IKFAST:
@@ -191,41 +224,57 @@ class Arm(object):
             except Exception:
                 raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
         elif self.ik_solver == IKSolverType.TRAC_IK:
-            try:
-                self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.1, epsilon=1e-5, solve_type="Distance")
-            except Exception as e:
-                rospy.logerr("Could not instantiate TRAC_IK" + str(e))
+            if TRACK_IK_SOLVER is None:
+                # No ROS 2 trac_ik_python build: degrade to the KDL solver.
+                self.node.get_logger().warn("trac_ik_python unavailable; falling back to KDL IK solver")
+                self.ik_solver = IKSolverType.KDL
+            else:
+                try:
+                    # ROS 2 trac_ik_python takes the URDF as a string (no param server).
+                    self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, urdf_string=robot_description,
+                                                   timeout=0.1, epsilon=1e-5, solve_type="Distance")
+                except Exception as e:
+                    self.node.get_logger().error("Could not instantiate TRAC_IK" + str(e))
+                    self.ik_solver = IKSolverType.KDL
         elif self.ik_solver == IKSolverType.KDL:
             pass
         else:
             raise Exception("unsupported ik_solver", self.ik_solver)
 
     def __init_ft_sensor__(self):
-        # Publisher of wrench
-        ft_namespace = self.ns + self.ft_topic + '/filtered'
-        if not utils.topic_exist(ft_namespace):
-            rospy.logwarn("Filtered FT topic not found. Using raw sensor directly.")
+        # Subscriber of wrench. Use best-effort sensor QoS (compatible with both
+        # reliable and best-effort publishers).
+        filtered_topic = self.ns + self.ft_topic + '/filtered'
+        if not utils.topic_exist(self.node, filtered_topic):
+            self.node.get_logger().warn("Filtered FT topic not found. Using raw sensor directly.")
             # Try the raw FT topic
-            ft_namespace = self.ns + self.ft_topic
-            rospy.Subscriber(ft_namespace, WrenchStamped, self.__ft_callback__)
+            raw_topic = self.ns + self.ft_topic
+            self._ft_sub = self.node.create_subscription(WrenchStamped, raw_topic, self.__ft_callback__, qos_profile_sensor_data)
             self._zero_ft_filtered = lambda: None
-            self._ft_filtered = lambda: None
+            self._ft_filtered = lambda active=True: None
         else:
-            rospy.Subscriber(ft_namespace, WrenchStamped, self.__ft_callback__)
+            self._ft_sub = self.node.create_subscription(WrenchStamped, filtered_topic, self.__ft_callback__, qos_profile_sensor_data)
 
-            self._zero_ft_filtered = rospy.ServiceProxy('%s/%s/filtered/zero_ftsensor' % (self.ns, self.ft_topic), Empty)
-            self._zero_ft_filtered.wait_for_service(rospy.Duration(2.0))
+            zero_ft_filtered_client = self.node.create_client(Empty, filtered_topic + '/zero_ftsensor')
+            zero_ft_filtered_client.wait_for_service(timeout_sec=2.0)
+            self._zero_ft_filtered = lambda: zero_ft_filtered_client.call(Empty.Request())
 
-            self._ft_filtered = rospy.ServiceProxy('%s/%s/filtered/enable_filtering' % (self.ns, self.ft_topic), SetBool)
-            self._ft_filtered.wait_for_service(rospy.Duration(1.0))
+            ft_filter_client = self.node.create_client(SetBool, filtered_topic + '/enable_filtering')
+            ft_filter_client.wait_for_service(timeout_sec=1.0)
+            self._ft_filtered = lambda active=True: ft_filter_client.call(SetBool.Request(data=bool(active)))
 
             # Check that the FT topic is publishing
             if not utils.wait_for(lambda: self.current_ft_value is not None, timeout=2.0):
-                rospy.logerr('Timed out waiting for {0} topic'.format(ft_namespace))
+                self.node.get_logger().error('Timed out waiting for {0} topic'.format(filtered_topic))
 
-        if not rospy.has_param("use_gazebo_sim"):
-            self._zero_ft = rospy.ServiceProxy('%s/ur_hardware_interface/zero_ftsensor' % self.ns, Trigger)
-            self._zero_ft.wait_for_service(rospy.Duration(2.0))
+        # use_gazebo_sim is a node parameter (ROS 2 has no global param server).
+        self.use_gazebo_sim = bool(utils.read_parameter(self.node, "use_gazebo_sim", False))
+        if not self.use_gazebo_sim:
+            zero_ft_client = self.node.create_client(Trigger, self.ns + 'ur_hardware_interface/zero_ftsensor')
+            zero_ft_client.wait_for_service(timeout_sec=2.0)
+            self._zero_ft = lambda: zero_ft_client.call(Trigger.Request())
+        else:
+            self._zero_ft = lambda: None
 
     def __ft_callback__(self, msg):
         self.current_ft_value = conversions.from_wrench(msg.wrench)
@@ -276,7 +325,7 @@ class Arm(object):
 
         Parameters
         ----------
-        pose : 
+        pose :
             Cartesian pose of the end-effector defined as ee_link
         seed : optional
             if given, attempt to return a joint configuration closer to the seed
@@ -311,7 +360,7 @@ class Arm(object):
             if attempts > 0:
                 return self.inverse_kinematics(pose, seed, attempts-1)
             if verbose:
-                rospy.logwarn(f"{self.ik_solver}: solution not found!")
+                self.node.get_logger().warn(f"{self.ik_solver}: solution not found!")
             raise InverseKinematicsException(f"{self.ik_solver}: solution not found for pose {pose}!")
         return ik
 
@@ -319,7 +368,7 @@ class Arm(object):
                      joint_angles=None,
                      rot_type='quaternion',
                      tip_link=None) -> np.ndarray:
-        """ 
+        """
         Return the Cartesian pose of the end-effector in the robot base frame (base_link).
 
         Parameters
@@ -337,7 +386,7 @@ class Arm(object):
         Returns
         -------
         res : ndarray
-            The Cartesian pose in the form of 
+            The Cartesian pose in the form of
             quaternion: [x, y, z, aw, ax, ay, az] or
             euler: [x, y, z, roll, pitch, yaw]
             in radians.
@@ -407,7 +456,7 @@ class Arm(object):
 
     def joint_angles(self) -> np.ndarray:
         """
-        Returns the current joint positions in radians and 
+        Returns the current joint positions in radians and
         in the order given by constants.JOINT_ORDER.
         """
         return self.joint_traj_controller.get_joint_positions()
@@ -456,7 +505,7 @@ class Arm(object):
     def get_wrench(self,
                    base_frame_control=False,
                    hand_frame_control=False) -> np.ndarray:
-        """ 
+        """
         Returns the wrench (force/torque) in task-space.
         By default, return the wrench as read from the sensor topic.
 
@@ -508,7 +557,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         positions : numpy.ndarray
             target joint configuration in the order given by constants.JOINT_ORDER
@@ -522,7 +571,7 @@ class Arm(object):
         Returns
         -------
         res : bool
-            True if the trajectory is successful when waiting for the execution to be 
+            True if the trajectory is successful when waiting for the execution to be
             completed. Otherwise returns true if the trajectory was started.
         """
         self.activate_joint_trajectory_controller()
@@ -563,7 +612,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         positions : 2-D numpy.ndarray
             list of target joint configuration for each waypoint in the order given by constants.JOINT_ORDER
@@ -608,7 +657,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -623,7 +672,7 @@ class Arm(object):
         """
         q = self.inverse_kinematics(pose)
         if q is None:
-            rospy.logdebug("IK not found")
+            self.node.get_logger().debug("IK not found")
             raise InverseKinematicsException("IK solver failed to find a solution")
         else:
             return self.set_joint_positions(positions=q, target_time=target_time, wait=wait)
@@ -637,7 +686,7 @@ class Arm(object):
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -667,13 +716,13 @@ class Arm(object):
                       transformation: np.array,
                       relative_to_tcp: bool = True,
                       wait: bool = True) -> ExecutionResult:
-        """ 
+        """
         Move end-effector (ee_link) relative to its current position
 
         Parameters
         ----------
         target_time : float
-            time at which target joint should be reach. It can be understood as the 
+            time at which target joint should be reach. It can be understood as the
             duration of the trajectory.
         pose : numpy.ndarray
             Cartesian target pose. Only the quaternion representation is supported
@@ -701,17 +750,18 @@ class Arm(object):
             wait_time (float, optional): The maximum time to wait in seconds. Defaults to 5.
         """
         remaining_time = wait_time
-        start_time = rospy.get_time()
+        # Monotonic wall-clock (ROS 2 has no global rospy clock here).
+        start_time = time.monotonic()
 
         prev_state = self.joint_angles()
 
         no_motion_count = 0
 
-        rate = rospy.Rate(500)
+        period = 1.0 / 500
 
         while remaining_time > 0 and no_motion_count < 10:
-            rate.sleep()
-            remaining_time = wait_time - (rospy.get_time() - start_time)
+            time.sleep(period)
+            remaining_time = wait_time - (time.monotonic() - start_time)
             curr_state = self.joint_angles()
             if np.allclose(prev_state, curr_state, atol=0.0001):
                 no_motion_count += 1
@@ -732,16 +782,16 @@ class Arm(object):
         """
         Reset force-torque sensor readings to zeros.
         """
-        if not rospy.has_param("use_gazebo_sim"):
+        if not self.use_gazebo_sim:
             # First try to zero FT from ur_driver
             self._zero_ft()
-            rospy.sleep(sleep_time)
+            time.sleep(sleep_time)
         # Then update filtered one
         self._zero_ft_filtered()
-        rospy.sleep(sleep_time)
+        time.sleep(sleep_time)
 
     def set_ft_filtering(self, active=True):
-        """ 
+        """
         Enable/disable a low-pass filter.
         If active, the readings returned from self.get_wrench will have been filtered.
         otherwise, the raw data from the sensor's topic will be returned.
