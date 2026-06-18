@@ -46,7 +46,8 @@ class GripperControllerBase():
         else:
             raise RuntimeError(
                 "No gripper joint params found for '%s'. Provide 'joint'/'joints'/'joint_name' "
-                "(e.g. --ros-args --params-file <ur_gripper_gz>/config/gripper_hande_client.yaml)." % node_name)
+                "via a gripper client params file, e.g. --ros-args --params-file "
+                "$(ros2 pkg prefix ur_gripper_gz)/share/ur_gripper_gz/config/gripper_2f85_client.yaml" % node_name)
 
         self._js_sub = node.create_subscription(JointState, '/joint_states', self.joint_states_cb, qos_profile_sensor_data)
 

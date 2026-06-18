@@ -1,0 +1,40 @@
+# ros2_control controllers for the UR + Robotiq 2F-85 gz bringup.
+# Loaded by the gz_ros2_control system plugin (see ur_gripper_2f85_gz.urdf.xacro).
+#
+# The gripper is a position_controllers/GripperActionController on the single actuated
+# knuckle joint, exposing gripper_controller/gripper_cmd (control_msgs/GripperCommand) —
+# this matches ur_control.grippers.GripperController(gripper_type="85") out of the box.
+controller_manager:
+  ros__parameters:
+    update_rate: 500
+    use_sim_time: true
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    scaled_joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    gripper_controller:
+      type: position_controllers/GripperActionController
+
+scaled_joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+
+gripper_controller:
+  ros__parameters:
+    joint: robotiq_85_left_knuckle_joint
+    max_effort: 50.0
+    allow_stalling: true

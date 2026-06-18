@@ -38,6 +38,7 @@ from rclpy.utilities import remove_ros_args
 from ur_control import transformations
 from ur_control.arm import Arm
 from ur_control.constants import GripperType, IKSolverType
+from ur_control.gripper_configs import apply_gripper_config, read_active_gripper, GRIPPER_CONFIGS
 from ur_control.getch import getch
 
 np.set_printoptions(linewidth=np.inf)
@@ -179,7 +180,9 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--namespace', type=str, help='Namespace of arm (useful when having multiple arms)', default=None)
     parser.add_argument(
-        '--gripper', type=str, help='gripper type', default=None)
+        '--gripper', type=str, default='auto',
+        help="gripper: 'auto' (read /active_gripper from the bringup), a registry name "
+             "(robotiq_2f85, robotiq_hande, none), or legacy 'generic'/'robotiq'.")
     parser.add_argument(
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
@@ -199,11 +202,24 @@ See help inside the example with the '?' key for key bindings.
     try:
         tcp_link = cli_args.tcp
         joints_prefix = cli_args.namespace + '_' if cli_args.namespace else None
-        if cli_args.gripper == 'robotiq':
+        # Resolve which gripper to use. 'auto' reads the latched /active_gripper topic
+        # published by the bringup, so the gripper is defined once (in the launcher).
+        gripper_name = cli_args.gripper
+        if gripper_name in (None, 'auto'):
+            gripper_name = read_active_gripper(node) or 'none'
+            node.get_logger().info("Active gripper (from /active_gripper): %s" % gripper_name)
+
+        if gripper_name in ('none', None):
+            gripper = None
+        elif gripper_name == 'robotiq':      # legacy: real Robotiq CModel gripper
             gripper = GripperType.ROBOTIQ
-        elif cli_args.gripper == 'generic':
+        elif gripper_name == 'generic':      # legacy: GripperController, params provided externally
+            gripper = GripperType.GENERIC
+        elif gripper_name in GRIPPER_CONFIGS:  # registry gripper -> config resolved internally
+            apply_gripper_config(node, gripper_name)
             gripper = GripperType.GENERIC
         else:
+            node.get_logger().error("Unknown gripper '%s'; loading without gripper" % gripper_name)
             gripper = None
 
         arm = Arm(node,
