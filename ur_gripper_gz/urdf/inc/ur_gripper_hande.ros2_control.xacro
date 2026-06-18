@@ -1,0 +1,51 @@
+<?xml version="1.0"?>
+<!--
+  ros2_control for UR arm + Robotiq Hand-E in gz-sim.
+
+  Extends ur_description's arm joint block with BOTH Hand-E finger joints, each with a
+  position command interface. gz Harmonic has no mimic-constraint support and
+  gz_ros2_control's software mimic is not enforced here, so the two fingers are driven
+  independently (the client commands both to the same position).
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro">
+
+  <xacro:include filename="$(find ur_description)/urdf/inc/ur_joint_control.xacro"/>
+
+  <xacro:macro name="ur_gripper_hande_ros2_control" params="
+    name
+    tf_prefix
+    transmission_hw_interface:=hardware_interface/PositionJointInterface
+    initial_positions:=${dict(shoulder_pan_joint=0.0,shoulder_lift_joint=-1.57,elbow_joint=0.0,wrist_1_joint=-1.57,wrist_2_joint=0.0,wrist_3_joint=0.0)}
+    finger_initial_position:=0.0">
+
+    <ros2_control name="${name}" type="system">
+      <hardware>
+        <plugin>gz_ros2_control/GazeboSimSystem</plugin>
+      </hardware>
+
+      <xacro:ur_joint_control_description
+        tf_prefix="${tf_prefix}"
+        initial_positions="${initial_positions}"/>
+
+      <joint name="${tf_prefix}finger_joint">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${finger_initial_position}</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+      <joint name="${tf_prefix}hande_right_finger_joint">
+        <command_interface name="position"/>
+        <state_interface name="position">
+          <param name="initial_value">${finger_initial_position}</param>
+        </state_interface>
+        <state_interface name="velocity">
+          <param name="initial_value">0.0</param>
+        </state_interface>
+      </joint>
+    </ros2_control>
+  </xacro:macro>
+
+</robot>

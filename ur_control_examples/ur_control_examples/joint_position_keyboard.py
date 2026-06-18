@@ -53,8 +53,10 @@ def map_keyboard(arm, relative_to_tcp):
         print("EE Pose:", np.round(arm.end_effector(), 5).tolist())
         print("EE Pose (euler):", np.round(arm.end_effector(rot_type="euler"), 5).tolist())
         if arm.gripper:
-            print("Gripper angle:", np.round(arm.gripper.get_position(), 4))
-            print("Gripper position:", np.round(arm.gripper.opening_width, 4))
+            print("Gripper position:", np.round(arm.gripper.get_position(), 4))
+            # opening_width only exists on RobotiqGripper (CModel status feedback).
+            if hasattr(arm.gripper, "opening_width"):
+                print("Gripper opening_width:", np.round(arm.gripper.opening_width, 4))
             print("Gripper percentage:", np.round(arm.gripper.get_opening_percentage(), 4))
 
     def set_j(joint_name, sign):

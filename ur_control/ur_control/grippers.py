@@ -44,8 +44,9 @@ class GripperControllerBase():
             else:
                 self.valid_joint_names = joint_name
         else:
-            self.node.get_logger().error("Couldn't find valid gripper joint params for %s" % node_name)
-            return
+            raise RuntimeError(
+                "No gripper joint params found for '%s'. Provide 'joint'/'joints'/'joint_name' "
+                "(e.g. --ros-args --params-file <ur_gripper_gz>/config/gripper_hande_client.yaml)." % node_name)
 
         self._js_sub = node.create_subscription(JointState, '/joint_states', self.joint_states_cb, qos_profile_sensor_data)
 
@@ -62,7 +63,9 @@ class GripperControllerBase():
             elif (time.time() - start_time) > timeout and retry:
                 self.node.get_logger().error('Timed out waiting for gripper joint_states topic')
                 return
-            rclpy.spin_once(self.node, timeout_sec=0.01)
+            # Rely on the shared node's background executor (do NOT spin_once here:
+            # spinning a node that an executor is already spinning corrupts its wait set).
+            time.sleep(0.01)
             if not rclpy.ok():
                 return
 
@@ -137,20 +140,29 @@ class GripperControllerBase():
                 return True
             if self._goal_handle is not None and not self._goal_handle.accepted:
                 return False
-            rclpy.spin_once(self.node, timeout_sec=0.01)
+            # Poll; results arrive via done-callbacks on the shared background executor.
+            time.sleep(0.01)
         return self._result is not None
 
     def _make_trajectory_goal(self, finger_position, duration=1.0):
         goal = FollowJointTrajectory.Goal()
         pos = float(finger_position)
+        # Sim safety clamp: gz_ros2_control ignores URDF joint limits, and over-closing
+        # the Hand-E fingers past finger/body contact jams them in gz. _finger_max defaults
+        # to a no-op for real hardware; set it (e.g. 0.02) via the client params for sim.
+        pos = float(np.clip(pos, 0.0, getattr(self, "_finger_max", 1.0)))
         if self.gripper_type == "hand-e" and getattr(self, "_use_trajectory", False):
-            goal.trajectory.joint_names = ["finger_joint", "hande_right_finger_joint"]
+            # Both Hand-E fingers are actuated independently and commanded to the same
+            # position: gz Harmonic's physics engine has no mimic constraints, and
+            # gz_ros2_control's software mimic is not enforced in this setup.
+            goal.trajectory.joint_names = [self.prefix + "finger_joint",
+                                           self.prefix + "hande_right_finger_joint"]
             point = JointTrajectoryPoint()
             point.positions = [pos, pos]
         else:
             goal.trajectory.joint_names = list(self.valid_joint_names)
             point = JointTrajectoryPoint()
-            point.positions = [pos]
+            point.positions = [pos] * len(goal.trajectory.joint_names)
         point.velocities = [0.0] * len(point.positions)
         point.time_from_start = Duration(seconds=duration).to_msg()
         goal.trajectory.points = [point]
@@ -182,6 +194,11 @@ class GripperController(GripperControllerBase):
         self._use_trajectory = (
             self.gripper_type == "hand-e"
             and str(utils.read_parameter(node, "gripper_action_interface", "gripper_command")) == "trajectory")
+
+        # Per-finger position clamp (meters). Defaults to a no-op (real hardware uses the
+        # full URDF travel); set to e.g. 0.02 in the sim client params to avoid the gz
+        # over-close jam.
+        self._finger_max = float(utils.read_parameter(node, "gripper_finger_max_position", 1.0))
 
         if self._use_trajectory:
             traj_controller = str(utils.read_parameter(node, "gripper_trajectory_controller", "gripper_controller"))

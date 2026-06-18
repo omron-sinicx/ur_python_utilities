@@ -1,0 +1,71 @@
+# ros2_control controller_manager config for the gz_ros2_control bringup.
+# Loaded by the gz_ros2_control system plugin (see ur_gripper_hande_gz.urdf.xacro).
+#
+# The trajectory controller is named 'scaled_joint_trajectory_controller' so
+# ur_control's Arm drives the simulated robot unchanged.
+controller_manager:
+  ros__parameters:
+    update_rate: 500  # Hz
+    use_sim_time: true
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    scaled_joint_trajectory_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+    forward_velocity_controller:
+      type: forward_command_controller/ForwardCommandController
+
+    # JTC gives reliable prismatic position control in gz; GripperActionController
+    # overshoots/stalls on finger_joint. ur_control uses FollowJointTrajectory in
+    # trajectory mode (see config/gripper_hande_client.yaml).
+    gripper_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+scaled_joint_trajectory_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 0.6
+
+forward_velocity_controller:
+  ros__parameters:
+    joints:
+      - shoulder_pan_joint
+      - shoulder_lift_joint
+      - elbow_joint
+      - wrist_1_joint
+      - wrist_2_joint
+      - wrist_3_joint
+    interface_name: velocity
+
+gripper_controller:
+  ros__parameters:
+    # Both Hand-E fingers are driven independently (gz has no working mimic); the
+    # client commands both to the same position.
+    joints:
+      - finger_joint
+      - hande_right_finger_joint
+    command_interfaces:
+      - position
+    state_interfaces:
+      - position
+      - velocity
+    allow_partial_joints_goal: true
+    constraints:
+      stopped_velocity_tolerance: 0.001
+      goal_time: 2.0
