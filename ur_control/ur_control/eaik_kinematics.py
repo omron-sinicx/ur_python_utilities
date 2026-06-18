@@ -48,6 +48,41 @@ def _strip_xml_prolog(xml: str) -> str:
     return re.sub(r"<\?xml[^>]*\?>", "", xml, count=1).lstrip()
 
 
+def _strip_non_urdf_tags(xml: str) -> str:
+    """Drop Gazebo / ros2_control extensions that urchin cannot parse."""
+    xml = _strip_xml_prolog(xml)
+    xml = re.sub(r"<ros2_control[\s\S]*?</ros2_control>", "", xml)
+    xml = re.sub(r"<gazebo[\s\S]*?</gazebo>", "", xml)
+    xml = re.sub(r"<gazebo[^>]*/>", "", xml)
+    return xml
+
+
+_REVOLUTE_JOINT_TYPES = ("revolute", "continuous")
+
+
+def _revolute_chain_joints(robot: "URDF", base_link: str, tip_link: str) -> list:
+    """Revolute joints on the kinematic chain from base_link to tip_link (root to tip)."""
+    child_to_joint = {joint.child: joint for joint in robot.joints}
+
+    chain = []
+    link = tip_link
+    while link != base_link:
+        if link not in child_to_joint:
+            raise ValueError(
+                "URDF chain broken: link '%s' has no parent joint while walking toward '%s'"
+                % (link, base_link))
+        joint = child_to_joint[link]
+        if joint.joint_type in _REVOLUTE_JOINT_TYPES:
+            chain.append(joint)
+        link = joint.parent
+
+    chain.reverse()
+    if not chain:
+        raise ValueError(
+            "No revolute joints on chain from '%s' to '%s'" % (base_link, tip_link))
+    return chain
+
+
 def _load_urdf(*, urdf: str = None, file_path: str = None) -> "URDF":
     """Load a URDF model from a file path or an in-memory XML string."""
     if (urdf is None) == (file_path is None):
@@ -56,7 +91,7 @@ def _load_urdf(*, urdf: str = None, file_path: str = None) -> "URDF":
     if file_path is not None:
         return URDF.load(file_path, lazy_load_meshes=True)
 
-    buf = io.BytesIO(_strip_xml_prolog(urdf).encode())
+    buf = io.BytesIO(_strip_non_urdf_tags(urdf).encode())
     buf.name = "robot.urdf"
     return URDF.load(buf, lazy_load_meshes=True)
 
@@ -67,6 +102,8 @@ class UrdfRobot(IKRobot):
     def __init__(self,
                  urdf: str = None,
                  file_path: str = None,
+                 base_link: str = None,
+                 tip_link: str = None,
                  fixed_axes: list[tuple[int, float]] = None):
         """
         Parameters
@@ -75,6 +112,12 @@ class UrdfRobot(IKRobot):
             URDF XML string (e.g. from the ``/robot_description`` topic).
         file_path : str, optional
             Path to a URDF file on disk.
+        base_link : str, optional
+            Root link of the IK chain. When set together with ``tip_link``, only
+            revolute joints on that chain are used (gripper / extra DOFs are
+            ignored). Matches the KDL chain used by :class:`ur_kinematics`.
+        tip_link : str, optional
+            Tip link of the IK chain (e.g. ``tool0``).
         fixed_axes : list[tuple[int, float]], optional
             Fixed joints as zero-indexed ``(joint_index, angle)`` pairs.
         """
@@ -87,16 +130,27 @@ class UrdfRobot(IKRobot):
 
         super().__init__()
         robot = _load_urdf(urdf=urdf, file_path=file_path)
-        joints = robot._sort_joints(robot.actuated_joints)
+
+        if base_link is not None and tip_link is not None:
+            joints = _revolute_chain_joints(robot, base_link, tip_link)
+        else:
+            joints = robot._sort_joints(robot.actuated_joints)
 
         fk_zero_pose = robot.link_fk()
+        # link_fk() is in the URDF root (world) frame. A fixed world->base offset
+        # (e.g. spawn yaw in sim xacros) must not enter the arm chain model.
+        if base_link is not None:
+            T_base_inv = np.linalg.inv(fk_zero_pose[robot.link_map[base_link]])
+        else:
+            T_base_inv = np.eye(4)
 
         parent_p = np.zeros(3)
         H = np.array([], dtype=np.int64).reshape(0, 3)
         P = np.array([], dtype=np.int64).reshape(0, 3)
         for joint in joints:
             joint_child_link = robot.link_map[joint.child]
-            h, p = self.urdf_to_sp_conv(fk_zero_pose[joint_child_link], joint.axis, parent_p)
+            T_child = T_base_inv @ fk_zero_pose[joint_child_link]
+            h, p = self.urdf_to_sp_conv(T_child, joint.axis, parent_p)
             H = np.vstack([H, h])
             P = np.vstack([P, p])
             parent_p += p
@@ -117,7 +171,8 @@ class EAIKKinematics(object):
         self._logger = logger
         self._num_joints = kdl._num_jnts
 
-        self._bot = UrdfRobot(urdf=robot_description, file_path=file_path)
+        self._bot = UrdfRobot(urdf=robot_description, file_path=file_path,
+                              base_link=kdl._base_link, tip_link=kdl._tip_link)
         if not self._bot.hasKnownDecomposition():
             raise ValueError(
                 "EAIK has no known decomposition for this URDF (kinematic family: %s)"

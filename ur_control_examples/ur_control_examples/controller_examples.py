@@ -24,40 +24,47 @@
 #
 # Author: Cristian Beltran
 
-import numpy as np
-import tf
-from ur_control import transformations, traj_utils, conversions
-from ur_control.arm import Arm
-from ur_control.constants import GripperType
+"""Basic ur_control motion examples (ROS 2)."""
+
 import argparse
 import random
-import rospy
+import sys
+import threading
+import time
 import timeit
+
+import numpy as np
+import rclpy
+import tf2_ros
+from rclpy.duration import Duration
+from rclpy.executors import MultiThreadedExecutor
+from rclpy.node import Node
+from rclpy.time import Time
+from rclpy.utilities import remove_ros_args
+from tf2_ros import TransformException
+
+from ur_control import conversions, transformations, traj_utils
+from ur_control.arm import Arm
+from ur_control.constants import GripperType
 
 np.set_printoptions(suppress=True)
 np.set_printoptions(linewidth=np.inf)
 
 
-def move_joints(wait=True):
-    # desired joint configuration 'q'
+def move_joints(arm):
     q = [1.8391, -1.5659, 1.4889, -1.6421, -1.6115, 0.2656]
-
-    # go to desired joint configuration
-    # in t time (seconds)
-    # wait is for waiting to finish the motion before executing
-    # anything else or ignore and continue with whatever is next
-    arm.set_joint_positions(positions=q, wait=wait, target_time=1.0)
+    arm.set_joint_positions(positions=q, wait=True, target_time=1.0)
 
 
-def move_joint_vel():
+def move_joint_vel(arm):
     print("Moving joint velocities")
     arm.activate_joint_velocity_controller()
     arm.set_joint_velocities(velocities=[0.0, -0.01, 0.0, 0.0, 0.0, 0.0])
-    rospy.sleep(10.0)
+    time.sleep(10.0)
     print("Moving joint velocities done")
 
 
-def follow_trajectory():
+def follow_trajectory(arm):
     traj = [
         [2.4463, -1.8762, -1.6757, 0.3268, 2.2378, 3.1960],
         [2.5501, -1.9786, -1.5293, 0.2887, 2.1344, 3.2062],
@@ -73,87 +80,54 @@ def follow_trajectory():
         arm.set_joint_positions(positions=t, wait=True, target_time=1.0)
 
 
-def move_endeffector():
-    # get current position of the end effector
+def move_endeffector(arm):
     cpose = arm.end_effector()
-    # define the desired translation/rotation
     deltax = np.array([0., 0., 0.04, 0., 0., 0.])
-    # add translation/rotation to current position
     cpose = transformations.transform_pose(cpose, deltax, rotated_frame=True)
-    # execute desired new pose
-    # may fail if IK solution is not found
     arm.set_target_pose(pose=cpose, wait=True, target_time=1.0)
 
 
-def move_gripper():
+def move_gripper(arm):
     print("closing")
     arm.gripper.close()
-    rospy.sleep(1.0)
+    time.sleep(1.0)
     print("opening")
     arm.gripper.open()
-    rospy.sleep(1.0)
+    time.sleep(1.0)
     print("moving")
-    arm.gripper.command(0.5, percentage=True)  # in percentage (80%)
-    # 0.0 is full close, 1.0 is full open
-    rospy.sleep(1.0)
+    arm.gripper.command(0.5, percentage=True)
+    time.sleep(1.0)
     print("moving")
-    arm.gripper.command(0.01)  # in meters
-    # 0.05 is full open, 0.0 is full close
-    # max gap for the Robotiq Hand-e is 0.05 meters
-
+    arm.gripper.command(0.01)
     print("current gripper position", round(arm.gripper.get_position(), 4), "meters")
 
 
-def grasp_naive():
-    # probably won't work
+def grasp_naive(arm):
     arm.gripper.open()
-    q1 = [1.82224, -1.59475,  1.68247, -1.80611, -1.60922,  0.24936]
+    q1 = [1.82224, -1.59475, 1.68247, -1.80611, -1.60922, 0.24936]
     arm.set_joint_positions(positions=q1, wait=True, target_time=1.0)
 
-    q2 = [1.82225, -1.55525,  1.86741, -2.03039, -1.60938,  0.24935]
+    q2 = [1.82225, -1.55525, 1.86741, -2.03039, -1.60938, 0.24935]
     arm.set_joint_positions(positions=q2, wait=True, target_time=1.0)
 
     arm.gripper.command(0.036)
-    rospy.sleep(0.5)
+    time.sleep(0.5)
 
-    q1 = [1.82224, -1.59475,  1.68247, -1.80611, -1.60922,  0.24936]
+    q1 = [1.82224, -1.59475, 1.68247, -1.80611, -1.60922, 0.24936]
     arm.set_joint_positions(positions=q1, wait=True, target_time=1.0)
-
-
-def grasp_plugin():
-    arm.gripper.open()
-    q1 = [1.82224, -1.59475,  1.68247, -1.80611, -1.60922,  0.24936]
-    arm.set_joint_positions(positions=q1, wait=True, target_time=1.0)
-
-    q2 = [1.82225, -1.55525,  1.86741, -2.03039, -1.60938,  0.24935]
-    arm.set_joint_positions(positions=q2, wait=True, target_time=1.0)
-
-    arm.gripper.command(0.039)
-    # attach the object "link" to the robot "model_name"::"link_name"
-    arm.gripper.grab(link_name="cube3::link")
-
-    q1 = [1.82224, -1.59475,  1.68247, -1.80611, -1.60922,  0.24936]
-    arm.set_joint_positions(positions=q1, wait=True, target_time=1.0)
-    rospy.sleep(2.0)  # release after 2 secs
-
-    # dettach the object "link" to the robot "model_name"::"link_name"
-    arm.gripper.open()
-    arm.gripper.release(link_name="cube3::link")
 
 
 def get_random_valid_direction(plane):
     if plane == "XZ":
         return random.choice(["+X", "-X", "+Z", "-Z"])
-    elif plane == "YZ":
+    if plane == "YZ":
         return random.choice(["+Y", "-Y", "+Z", "-Z"])
-    elif plane == "XY":
+    if plane == "XY":
         return random.choice(["+X", "-X", "+Y", "-Y"])
-    else:
-        raise ValueError("Invalid value for plane: %s" % plane)
+    raise ValueError("Invalid value for plane: %s" % plane)
 
 
-def circular_trajectory():
-    """ Simple circular trajectory from initial pose. 5cm of radius"""
+def circular_trajectory(arm, node):
     initial_q = [1.8391, -1.5659, 1.4889, -1.6421, -1.6115, 0.2656]
     arm.set_joint_positions(positions=initial_q, wait=True, target_time=2)
 
@@ -161,36 +135,41 @@ def circular_trajectory():
     steps = 100
     plane = "XY"
     direction = get_random_valid_direction(plane)
-    dummy_trajectory = traj_utils.compute_trajectory(initial_pose=[0, 0, 0., 0, 0, 0, 1.],
-                                                     plane=plane, radius=0.05,
-                                                     radius_direction=direction, steps=steps, revolutions=1,
-                                                     from_center=False, trajectory_type="circular")
+    dummy_trajectory = traj_utils.compute_trajectory(
+        initial_pose=[0, 0, 0., 0, 0, 0, 1.],
+        plane=plane, radius=0.05,
+        radius_direction=direction, steps=steps, revolutions=1,
+        from_center=False, trajectory_type="circular")
 
-    listener = tf.TransformListener()
-    # convert dummy_trajectory (initial pose frame id) to robot's base frame
+    buffer = tf2_ros.Buffer()
+    tf_listener = tf2_ros.TransformListener(buffer, node)
+    del tf_listener
+
     try:
-        listener.waitForTransform("base_link", "wrist_3_link", rospy.Time(0), rospy.Duration(1))
-        transform2target = listener.fromTranslationRotation(*listener.lookupTransform("base_link", "wrist_3_link", rospy.Time(0)))
-    except Exception as e:
-        print(e)
+        transform = buffer.lookup_transform(
+            'base_link', 'wrist_3_link', Time(), timeout=Duration(seconds=1.0))
+    except TransformException as exc:
+        node.get_logger().error(str(exc))
         return False
+
+    transform2target = conversions.from_transform(transform.transform)
 
     actual_trajectory = []
     for p in dummy_trajectory:
-        ps = conversions.to_pose_stamped("base_link", p)
-        next_pose = conversions.from_pose_to_list(conversions.transform_pose("base_link", transform2target, ps).pose)
+        ps = conversions.to_pose_stamped('base_link', p)
+        next_pose = conversions.from_pose_to_list(
+            conversions.transform_pose('base_link', transform2target, ps).pose)
         print("next_pose", np.round(next_pose[:3].tolist(), 4))
         actual_trajectory.append(next_pose)
-
-        arm.set_target_pose(pose=next_pose, target_time=duration/steps, wait=False)
-        rospy.sleep(duration/steps)
+        arm.set_target_pose(pose=next_pose, target_time=duration / steps, wait=False)
+        time.sleep(duration / steps)
 
     arm.set_pose_trajectory(trajectory=actual_trajectory, target_time=duration)
+    return True
 
 
-def main():
-    """ Main function to be run. """
-    parser = argparse.ArgumentParser(description='Test force control')
+def main(args=None):
+    parser = argparse.ArgumentParser(description='ur_control motion examples')
     parser.add_argument('-m', '--move', action='store_true',
                         help='move to joint configuration')
     parser.add_argument('-j', '--move_joint_vel', action='store_true',
@@ -203,47 +182,69 @@ def main():
                         help='Move gripper')
     parser.add_argument('--grasp_naive', action='store_true',
                         help='Test simple grasping (cube_tasks world)')
-    parser.add_argument('--grasp_plugin', action='store_true',
-                        help='Test grasping plugin (cube_tasks world)')
     parser.add_argument('--circle', action='store_true',
                         help='Circular rotation around a target pose')
+    parser.add_argument('--namespace', type=str, default=None)
+    parser.add_argument('--gripper_type', type=str, default=None,
+                        choices=['robotiq', 'generic'])
 
-    args = parser.parse_args()
+    argv = remove_ros_args(args if args is not None else sys.argv)
+    cli_args = parser.parse_args(argv[1:])
 
-    rospy.init_node('ur3e_script_control')
+    rclpy.init(args=args)
+    node = Node('ur_control_examples')
 
-    global arm
-    arm = Arm(gripper_type=None,
-              use_velocity_interface=True,
-              robot_version="UR5e")
-
-    arm.activate_joint_trajectory_controller()
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+    spin_thread = threading.Thread(target=executor.spin, daemon=True)
+    spin_thread.start()
+    time.sleep(1.0)
 
     real_start_time = timeit.default_timer()
-    ros_start_time = rospy.get_time()
+    ros_start_time = node.get_clock().now().nanoseconds / 1e9
 
-    if args.move:
-        move_joints()
-    if args.move_joint_vel:
-        move_joint_vel()
-    if args.move_traj:
-        follow_trajectory()
-    if args.move_ee:
-        move_endeffector()
-    if args.gripper:
-        move_gripper()
-    if args.grasp_naive:
-        grasp_naive()
-    if args.grasp_plugin:
-        grasp_plugin()
-    if args.circle:
-        circular_trajectory()
+    try:
+        if cli_args.gripper_type == 'robotiq':
+            gripper = GripperType.ROBOTIQ
+        elif cli_args.gripper_type == 'generic':
+            gripper = GripperType.GENERIC
+        else:
+            gripper = None
 
-    arm.activate_joint_velocity_controller()
+        joints_prefix = cli_args.namespace + '_' if cli_args.namespace else None
+        arm = Arm(node,
+                  namespace=cli_args.namespace,
+                  gripper_type=gripper,
+                  joint_names_prefix=joints_prefix,
+                  use_velocity_interface=True,
+                  robot_version='UR5e')
 
-    print("real time", round(timeit.default_timer() - real_start_time, 3))
-    print("ros time", round(rospy.get_time() - ros_start_time, 3))
+        arm.activate_joint_trajectory_controller()
+
+        if cli_args.move:
+            move_joints(arm)
+        if cli_args.move_joint_vel:
+            move_joint_vel(arm)
+        if cli_args.move_traj:
+            follow_trajectory(arm)
+        if cli_args.move_ee:
+            move_endeffector(arm)
+        if cli_args.gripper:
+            move_gripper(arm)
+        if cli_args.grasp_naive:
+            grasp_naive(arm)
+        if cli_args.circle:
+            circular_trajectory(arm, node)
+
+        arm.activate_joint_velocity_controller()
+    finally:
+        ros_end = node.get_clock().now().nanoseconds / 1e9
+        print("real time", round(timeit.default_timer() - real_start_time, 3))
+        print("ros time", round(ros_end - ros_start_time, 3))
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

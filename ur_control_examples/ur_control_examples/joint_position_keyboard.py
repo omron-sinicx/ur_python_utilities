@@ -37,7 +37,7 @@ from rclpy.utilities import remove_ros_args
 
 from ur_control import transformations
 from ur_control.arm import Arm
-from ur_control.constants import GripperType
+from ur_control.constants import GripperType, IKSolverType
 from ur_control.getch import getch
 
 np.set_printoptions(linewidth=np.inf)
@@ -208,7 +208,9 @@ See help inside the example with the '?' key for key bindings.
                   namespace=cli_args.namespace,
                   gripper_type=gripper,
                   joint_names_prefix=joints_prefix,
-                  ee_link=tcp_link)
+                  ee_link=tcp_link,
+                #   ik_solver=IKSolverType.KDL,
+                  )
 
         arm.dashboard_services.activate_ros_control_on_ur()
 

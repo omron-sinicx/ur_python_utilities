@@ -3,9 +3,12 @@ import time
 import numpy as np
 import rclpy
 from rclpy.action import ActionClient
+from rclpy.duration import Duration
+from rclpy.time import Time
 from rclpy.qos import qos_profile_sensor_data
 from sensor_msgs.msg import JointState
-from control_msgs.action import GripperCommand
+from control_msgs.action import GripperCommand, FollowJointTrajectory
+from trajectory_msgs.msg import JointTrajectoryPoint
 
 from ur_control import utils
 
@@ -59,7 +62,7 @@ class GripperControllerBase():
             elif (time.time() - start_time) > timeout and retry:
                 self.node.get_logger().error('Timed out waiting for gripper joint_states topic')
                 return
-            time.sleep(0.01)
+            rclpy.spin_once(self.node, timeout_sec=0.01)
             if not rclpy.ok():
                 return
 
@@ -116,6 +119,8 @@ class GripperControllerBase():
         self._status = response.status
 
     def _send_goal(self, client, goal, wait, timeout=5.0):
+        if self._goal_handle is not None:
+            self._goal_handle.cancel_goal_async()
         self._result = None
         self._status = None
         self._goal_handle = None
@@ -132,8 +137,25 @@ class GripperControllerBase():
                 return True
             if self._goal_handle is not None and not self._goal_handle.accepted:
                 return False
-            time.sleep(0.01)
+            rclpy.spin_once(self.node, timeout_sec=0.01)
         return self._result is not None
+
+    def _make_trajectory_goal(self, finger_position, duration=1.0):
+        goal = FollowJointTrajectory.Goal()
+        pos = float(finger_position)
+        if self.gripper_type == "hand-e" and getattr(self, "_use_trajectory", False):
+            goal.trajectory.joint_names = ["finger_joint", "hande_right_finger_joint"]
+            point = JointTrajectoryPoint()
+            point.positions = [pos, pos]
+        else:
+            goal.trajectory.joint_names = list(self.valid_joint_names)
+            point = JointTrajectoryPoint()
+            point.positions = [pos]
+        point.velocities = [0.0] * len(point.positions)
+        point.time_from_start = Duration(seconds=duration).to_msg()
+        goal.trajectory.points = [point]
+        goal.trajectory.header.stamp = Time().to_msg()
+        return goal
 
 
 class GripperController(GripperControllerBase):
@@ -157,18 +179,32 @@ class GripperController(GripperControllerBase):
             self._to_close = 0.001
             self._max_angle = 0.69
 
-        # Gripper action server
-        action_server = self.ns + node_name + '/gripper_cmd'
-        self._client = ActionClient(node, GripperCommand, action_server)
-        self._goal = GripperCommand.Goal()
-        self.node.get_logger().debug('Waiting for [%s] action server' % action_server)
-        if not self._client.wait_for_server(timeout_sec=timeout):
-            self.node.get_logger().error('Timed out waiting for Gripper Command'
-                                         ' Action Server to connect. Start the action server'
-                                         ' before running this node.')
-            raise RuntimeError('GripperCommand action timed out: {0}'.format(action_server))
-        self.node.get_logger().debug('Successfully connected to [%s]' % action_server)
-        self.node.get_logger().info('GripperCommand action initialized. ns: {0}'.format(self.ns))
+        self._use_trajectory = (
+            self.gripper_type == "hand-e"
+            and str(utils.read_parameter(node, "gripper_action_interface", "gripper_command")) == "trajectory")
+
+        if self._use_trajectory:
+            traj_controller = str(utils.read_parameter(node, "gripper_trajectory_controller", "gripper_controller"))
+            action_server = self.ns + traj_controller + '/follow_joint_trajectory'
+            self._client = ActionClient(node, FollowJointTrajectory, action_server)
+            self.node.get_logger().debug('Waiting for [%s] trajectory action server' % action_server)
+            if not self._client.wait_for_server(timeout_sec=timeout):
+                self.node.get_logger().error('Timed out waiting for gripper trajectory action server: %s' % action_server)
+                raise RuntimeError('Gripper trajectory action timed out: {0}'.format(action_server))
+            self.node.get_logger().info('Hand-E gripper trajectory action initialized. ns: {0}'.format(self.ns))
+        else:
+            # Gripper action server
+            action_server = self.ns + node_name + '/gripper_cmd'
+            self._client = ActionClient(node, GripperCommand, action_server)
+            self._goal = GripperCommand.Goal()
+            self.node.get_logger().debug('Waiting for [%s] action server' % action_server)
+            if not self._client.wait_for_server(timeout_sec=timeout):
+                self.node.get_logger().error('Timed out waiting for Gripper Command'
+                                             ' Action Server to connect. Start the action server'
+                                             ' before running this node.')
+                raise RuntimeError('GripperCommand action timed out: {0}'.format(action_server))
+            self.node.get_logger().debug('Successfully connected to [%s]' % action_server)
+            self.node.get_logger().info('GripperCommand action initialized. ns: {0}'.format(self.ns))
 
     def close(self, wait=True):
         return self.command(0.0, percentage=True, wait=wait)
@@ -204,12 +240,18 @@ class GripperController(GripperControllerBase):
             else:
                 cmd = np.clip(value, 0.0, self._max_gap)
                 cmd = (self._max_gap - value) / 2.0
-            self._goal.command.position = float(cmd)
+            if self._use_trajectory:
+                goal = self._make_trajectory_goal(cmd)
+            else:
+                self._goal.command.position = float(cmd)
+                goal = self._goal
+        else:
+            goal = self._goal
         if wait:
-            self._send_goal(self._client, self._goal, wait=True, timeout=2.0)
+            self._send_goal(self._client, goal, wait=True, timeout=5.0)
             time.sleep(0.05)
         else:
-            self._send_goal(self._client, self._goal, wait=False)
+            self._send_goal(self._client, goal, wait=False)
         return True
 
     def _distance_to_angle(self, distance):
