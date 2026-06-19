@@ -69,8 +69,16 @@ def generate_launch_description():
         output="screen",
     )
 
+    # Latch the gripper name so ur_control clients ('--gripper auto') resolve their config.
+    active_gripper_pub = Node(
+        package="ur_control", executable="active_gripper_publisher",
+        parameters=[{"gripper": "robotiq_hande"}], output="screen")
+
+    # bullet-featherstone is REQUIRED for the Hand-E mimic finger (default DART has no
+    # mimic-constraint support).
     gz_args = PythonExpression(
-        ["'-r -v3 empty.sdf' if '", gui, "' == 'true' else '-s -r -v3 empty.sdf'"]
+        ["'--physics-engine gz-physics-bullet-featherstone-plugin -r -v3 empty.sdf' if '", gui,
+         "' == 'true' else '--physics-engine gz-physics-bullet-featherstone-plugin -s -r -v3 empty.sdf'"]
     )
     gz_sim = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -135,6 +143,7 @@ def generate_launch_description():
                               description="Spawn gripper_controller for Hand-E finger_joint"),
         robot_state_publisher,
         clock_bridge,
+        active_gripper_pub,
         gz_sim,
         spawn_entity_delayed,
         RegisterEventHandler(OnProcessExit(target_action=spawn_entity, on_exit=[jsb_spawner])),

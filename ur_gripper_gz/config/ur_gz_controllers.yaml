@@ -55,11 +55,10 @@ forward_velocity_controller:
 
 gripper_controller:
   ros__parameters:
-    # Both Hand-E fingers are driven independently (gz has no working mimic); the
-    # client commands both to the same position.
+    # Only the actuated finger; hande_right_finger_joint mimics it (URDF <mimic>,
+    # enforced by gz bullet-featherstone) and must not be a controller joint.
     joints:
       - finger_joint
-      - hande_right_finger_joint
     command_interfaces:
       - position
     state_interfaces:

@@ -13,7 +13,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription,
+from launch.actions import (DeclareLaunchArgument, IncludeLaunchDescription,
                             RegisterEventHandler, SetEnvironmentVariable, TimerAction)
 from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -35,12 +35,11 @@ def generate_launch_description():
     gui = LaunchConfiguration("gui")
     gripper = LaunchConfiguration("gripper")
 
-    # Single source of truth for the gripper: latch its name on /active_gripper so any
-    # ur_control client ('--gripper auto') resolves its config internally (no --params-file).
-    active_gripper_pub = ExecuteProcess(
-        cmd=["ros2", "topic", "pub", "/active_gripper", "std_msgs/msg/String",
-             ["{data: ", gripper, "}"], "--qos-durability", "transient_local"],
-        output="screen")
+    # Single source of truth for the gripper: latch its name on /active_gripper (published
+    # once) so any ur_control client ('--gripper auto') resolves its config internally.
+    active_gripper_pub = Node(
+        package="ur_control", executable="active_gripper_publisher",
+        parameters=[{"gripper": gripper}], output="screen")
 
     pkg = FindPackageShare("ur_gripper_gz")
     controllers_file = PathJoinSubstitution([pkg, "config", "ur_gz_2f85_controllers.yaml"])

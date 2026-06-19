@@ -2,10 +2,10 @@
 <!--
   ros2_control for UR arm + Robotiq Hand-E in gz-sim.
 
-  Extends ur_description's arm joint block with BOTH Hand-E finger joints, each with a
-  position command interface. gz Harmonic has no mimic-constraint support and
-  gz_ros2_control's software mimic is not enforced here, so the two fingers are driven
-  independently (the client commands both to the same position).
+  Extends ur_description's arm joint block with the single actuated finger_joint.
+  hande_right_finger_joint is a URDF <mimic> of finger_joint, enforced by gz with the
+  bullet-featherstone physics engine (the launch selects it), so it gets state interfaces
+  only — no command interface.
 -->
 <robot xmlns:xacro="http://wiki.ros.org/xacro">
 
@@ -36,8 +36,9 @@
           <param name="initial_value">0.0</param>
         </state_interface>
       </joint>
+      <!-- mimic of finger_joint (see robotiq_hande_gripper.xacro), enforced by gz
+           (bullet-featherstone). Mimic joints get state interfaces only, no command. -->
       <joint name="${tf_prefix}hande_right_finger_joint">
-        <command_interface name="position"/>
         <state_interface name="position">
           <param name="initial_value">${finger_initial_position}</param>
         </state_interface>

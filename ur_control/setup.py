@@ -17,4 +17,9 @@ setup(
     description='UR control library: motion, force/compliance control, grippers (ROS 2 port).',
     license='MIT',
     tests_require=['pytest'],
+    entry_points={
+        'console_scripts': [
+            'active_gripper_publisher = ur_control.active_gripper_publisher:main',
+        ],
+    },
 )

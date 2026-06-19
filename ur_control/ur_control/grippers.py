@@ -153,13 +153,12 @@ class GripperControllerBase():
         # to a no-op for real hardware; set it (e.g. 0.02) via the client params for sim.
         pos = float(np.clip(pos, 0.0, getattr(self, "_finger_max", 1.0)))
         if self.gripper_type == "hand-e" and getattr(self, "_use_trajectory", False):
-            # Both Hand-E fingers are actuated independently and commanded to the same
-            # position: gz Harmonic's physics engine has no mimic constraints, and
-            # gz_ros2_control's software mimic is not enforced in this setup.
-            goal.trajectory.joint_names = [self.prefix + "finger_joint",
-                                           self.prefix + "hande_right_finger_joint"]
+            # Only the actuated finger is commanded; hande_right_finger_joint is a URDF
+            # <mimic> of finger_joint (enforced by gz bullet-featherstone), so it is not a
+            # controller joint and must not appear in the trajectory.
+            goal.trajectory.joint_names = [self.prefix + "finger_joint"]
             point = JointTrajectoryPoint()
-            point.positions = [pos, pos]
+            point.positions = [pos]
         else:
             goal.trajectory.joint_names = list(self.valid_joint_names)
             point = JointTrajectoryPoint()

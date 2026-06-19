@@ -94,16 +94,16 @@
       <axis xyz="-1 0 0"/>
       <limit effort="130" lower="0.002" upper="0.02" velocity="0.15"/>
     </joint>
-    <!-- NOTE (gz): the real Hand-E has one actuator + a mimic finger, but gz Harmonic's
-         physics engine does not support mimic constraints and gz_ros2_control's software
-         mimic is not enforced here. So both fingers are actuated independently and
-         commanded to the same position by the gripper client (see grippers.py). -->
+    <!-- Single-actuator Hand-E: the right finger mimics the actuated finger_joint. This is
+         enforced by gz only with the bullet-featherstone physics engine (the default DART
+         engine has no mimic-constraint support) — the launch selects it. -->
     <joint name="${prefix}hande_right_finger_joint" type="prismatic">
       <origin rpy="0 0 0" xyz="0 0 0.099"/>
       <parent link="${prefix}hand_e_link"/>
       <child link="${prefix}hande_right_finger"/>
       <axis xyz="1 0 0"/>
       <limit effort="130" lower="0.002" upper="0.02" velocity="0.15"/>
+      <mimic joint="${prefix}finger_joint" multiplier="1" offset="0"/>
     </joint>
 
   </xacro:macro>

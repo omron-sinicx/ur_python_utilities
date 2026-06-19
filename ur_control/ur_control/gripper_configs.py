@@ -24,8 +24,8 @@ GRIPPER_CONFIGS = {
     # Robotiq Hand-E in gz: JointTrajectoryController on both prismatic fingers.
     "robotiq_hande": {
         "gripper_type": "hand-e",
+        # only the actuated finger; hande_right_finger_joint is a mimic
         "joint": "finger_joint",
-        "joints": ["finger_joint", "hande_right_finger_joint"],
         "gripper_action_interface": "trajectory",
         "gripper_trajectory_controller": "gripper_controller",
         "gripper_finger_max_position": 0.02,
