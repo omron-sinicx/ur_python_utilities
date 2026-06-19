@@ -89,15 +89,15 @@ def map_keyboard(arm, relative_to_tcp):
         arm.set_target_pose(pose=xc, target_time=0.25)
 
     def open_gripper():
-        arm.gripper.open()
+        arm.gripper.open(wait=False)
 
     def close_gripper():
-        arm.gripper.close()
+        arm.gripper.close(wait=False)
 
     def move_gripper(delta):
         cpose = arm.gripper.get_position()
         cpose += delta
-        arm.gripper.command(cpose)
+        arm.gripper.command(cpose, wait=False)
 
     bindings = {
         #   key: (function, args, description)
@@ -227,7 +227,7 @@ See help inside the example with the '?' key for key bindings.
                   gripper_type=gripper,
                   joint_names_prefix=joints_prefix,
                   ee_link=tcp_link,
-                #   ik_solver=IKSolverType.KDL,
+                  #   ik_solver=IKSolverType.KDL,
                   )
 
         arm.dashboard_services.activate_ros_control_on_ur()
