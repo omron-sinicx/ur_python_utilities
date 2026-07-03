@@ -1,93 +1,184 @@
-Universal Robot UR/URe
-===
-<img src="https://github.com/cambel/ur3/blob/noetic-devel/wiki/ur3e.gif?raw=true" alt="UR3e & Robotiq Hand-e" width="250"><img src="https://github.com/cambel/ur3/blob/noetic-devel/wiki/ur3.gif?raw=true" alt="UR3 & Robotiq 85" width="250">
+# Universal Robot UR / URe — ROS 2 utilities
 
+Custom ROS 2 packages for Universal Robots with Robotiq grippers (2F-85 and Hand-E): control
+library, gz-sim bringup, MoveIt 2 config, and examples.
 
-Custom ROS packages for the UR3 Robot with a gripper Robotiq 85 and the UR3e robot with a gripper Robotiq Hand-e. 
-Tested on ROS Noetic Ubuntu 20.04 with Python 3.8.
+**ROS 2 Jazzy** on **Ubuntu 24.04** with **Gazebo Harmonic (gz-sim 8)**. For ROS 1 (Noetic /
+Melodic + Gazebo Classic), use the `noetic-devel` branch.
 
-For ROS Melodic see the `melodic-devel` branch.
+---
 
-## Installation 
+## Packages
 
-### [With docker](https://github.com/cambel/ur3/wiki/Install-with-Docker)
+| Package | Description |
+|---|---|
+| `ur_control` | Core Python control library — arm, grippers, FK/IK, compliance / force control |
+| `ur_pykdl` | Forward / inverse kinematics via PyKDL |
+| `ur_control_examples` | Example nodes (keyboard teleop, FT filter, …) |
+| `ur_gripper_gz` | gz-sim bringup for UR + Hand-E or 2F-85 (ros2_control, FT sensor, Cartesian compliance) |
+| `ur_gripper_gz_moveit_config` | MoveIt 2 config (arm + gripper), parameterized by `ur_type` and `gripper` |
 
-### [Compile from source](https://github.com/cambel/ur3/wiki/Compile-from-source)
+Simulation is handled by `ur_gripper_gz` plus apt
+`robotiq_description` (2F-85 geometry).
 
-## Examples
+---
 
-### Visualization of Universal Robot in RViz
+## Installation
 
-To visualize the model of the robot with a gripper, launch the following:
-  ```
-   roslaunch ur_gripper_description display_with_gripper_hande.launch ur_robot:=ur5e
-  ```
-You can then use the sliders to change the joint values and the gripper values. 
-Change the value of ur_robot to any other valid robot (ur3e, ur5e, ...)
+### With Docker
 
-### Simulation in Gazebo 9
-<img src="https://github.com/cambel/ur3/blob/noetic-devel/wiki/ur3-e.png?raw=true" width="500">
+ROS 2 Jazzy image with CUDA, MoveIt 2, gz Harmonic, and UR stack pre-installed:
 
-To simulate the robot launch the following:
-  ```
-   roslaunch ur_gripper_gazebo ur_gripper_85_cubes.launch ur_robot:=ur3 grasp_plugin:=1
-  ```
-or using ur3e:
-  ```
-   roslaunch ur_gripper_gazebo ur_gripper_hande_cubes.launch ur_robot:=ur3e grasp_plugin:=1
-  ```
+```bash
+./docker/BUILD-DOCKER-IMAGE.sh
+./docker/RUN-DOCKER.sh
 
-You can then send commands to the joints or to the gripper.
-
-An example of sending joints values to the robot can be executed as follows:
-  ```
-   rosrun ur_control sim_controller_examples.py -m
-  ```
-To change the values of the joints, the file `sim_controller_examples.py` must be modified.
-
-Similarly, the script include examples to control the robot's end-effector position, gripper and an example of performing grasping.
-Execute the following command to see the available examples.
-  ```
-   rosrun ur_control sim_controller_examples.py --help
-  ```
-
-For testing the grasping examples you need to explicitly specify that the gripper is going to be loaded, e.g.,
-  ```
-   rosrun ur_control sim_controller_examples.py --gripper --grasp_naive
-  ```
-
-The grasp_plugin example uses this [plugin](https://github.com/pal-robotics/gazebo_ros_link_attacher), and requires gazebo to be launched with the grasp_plugin parameter as `True`.
-
-An easy way to control the robot using the keyboard can be found in the script:
-  ```
-   rosrun ur_control joint_position_keyboard.py
-  ```
-Press SPACE to get a list of all valid commands to control either each independent joint or the end effector position x,y,z and rotations.
-To have access to the gripper controller include the option `--gripper`
-
-Another option of easy control is using `rqt`
-
-## MoveIt
-To test the MoveIt configuration with any UR/URe robot, start one of the gazebo environments, such as:
-```
-roslaunch ur_gripper_gazebo ur_gripper_hande_cubes.launch ur_robot:=ur3e grasp_plugin:=1
+# inside the container — first-time workspace build:
+ur-build-workspace
 ```
 
-Then load the MoveIt configuration
-```
-roslaunch ur_hande_moveit_config start_moveit.launch
+The repo is bind-mounted at `/root/ws/src/ur_python_utilities`. Third-party sources
+(`cartesian_controllers`, required for compliance control) are imported from
+`dependencies.repos` during `ur-build-workspace`.
+
+Set `DOCKER_RUNTIME=runc` on machines without an NVIDIA GPU (Intel GL fallback is handled in the
+container entry script).
+
+### Compile from source
+
+In a colcon workspace:
+
+```bash
+cd /path/to/ws/src
+git clone -b jazzy <this-repo> ur_python_utilities
+vcs import . < ur_python_utilities/dependencies.repos
+
+cd ..
+rosdep install --from-paths src --ignore-src -r -y
+colcon build --symlink-install \
+  --packages-skip cartesian_controller_simulation cartesian_controller_tests
+source install/setup.bash
 ```
 
-Then execute the tutorial
-```
-rosrun ur_control moveit_tutorial.py --tutorial
+When used inside the parent [osx_robot_env](https://github.com/omron-sinicx/osx_robot_env) repo,
+build `underlay_ws` first, then any overlay workspace on top.
+
+---
+
+## Quick start
+
+### Simulation
+
+```bash
+# UR5e + Robotiq 2F-85 (gui:=false for headless)
+ros2 launch ur_gripper_gz ur_2f85_gz_control.launch.py
+
+# UR + Robotiq Hand-E
+ros2 launch ur_gripper_gz ur_gz_control.launch.py
 ```
 
-## powder grounding
-```
-// bringup
-roslaunch osx_powder_grinding real_robot_bringup.launch
+Both launches force the **bullet-featherstone** physics engine (required for gripper mimic joints)
+and publish the active gripper name on `/active_gripper`.
 
-// run
-rosrun ur_control cartesian_compliance_controller_examples.py -pg
+### Keyboard teleop
+
+In a second terminal (with the workspace sourced):
+
+```bash
+ros2 run ur_control_examples joint_position_keyboard
 ```
+
+`--gripper auto` (default) reads `/active_gripper` from the running bringup. Press **SPACE** for
+the command list.
+
+### MoveIt 2
+
+Terminal 1 — sim:
+
+```bash
+ros2 launch ur_gripper_gz ur_2f85_gz_control.launch.py gui:=false
+# Hand-E: ros2 launch ur_gripper_gz ur_gz_control.launch.py gui:=false
+```
+
+Terminal 2 — MoveIt + RViz:
+
+```bash
+ros2 launch ur_gripper_gz_moveit_config ur_moveit.launch.py ur_type:=ur5e gripper:=robotiq_2f85
+# Hand-E: ur_type:=ur3e gripper:=hande
+```
+
+In RViz **MotionPlanning**: plan & execute with group `ur_manipulator` (arm) or `gripper`
+(open / close named states).
+
+---
+
+## Features
+
+### `ur_control`
+
+Python library ported from ROS 1 (`rospy` → `rclpy`). All classes take a shared `rclpy.node.Node`
+injected by the application; spin a `MultiThreadedExecutor` in a background thread before
+constructing `Arm` or gripper clients.
+
+Highlights:
+
+- Arm trajectory / velocity control via ros2_control (`scaled_joint_trajectory_controller`,
+  `forward_velocity_controller`)
+- Generic and Robotiq gripper drivers (`GripperCommand` and `FollowJointTrajectory` paths)
+- FK / IK (KDL + EAIK analytical IK)
+- FZI `cartesian_compliance_controller` wrapper (`CompliantController`) with runtime parameter tuning
+  via `SetParameters`
+- Gripper config registry + `/active_gripper` auto-detection
+
+### `ur_gripper_gz`
+
+Self-contained gz_ros2_control bringups:
+
+- **Hand-E** — single actuated `finger_joint`; right finger follows via URDF `<mimic>`
+- **2F-85** — PickNik `robotiq_description` geometry; one actuated knuckle + five mimic joints;
+  `GripperActionController` matches `ur_control` `gripper_type="85"`
+
+Both variants include:
+
+- Wrist **force-torque sensor** on `/wrench` (`force_torque_sensor_broadcaster`)
+- **`ft_filter`** — Butterworth filter to `/wrench/filtered` plus a zero service for taring distal-mass bias
+- **`cartesian_compliance_controller`** (loaded inactive; switched on by `CompliantController`)
+
+Zero the FT sensor at a known no-contact pose before using compliance or force control.
+
+### `ur_gripper_gz_moveit_config`
+
+MoveIt 2 config parameterized by `ur_type` + `gripper`. Includes mandatory SRDF
+`disable_collisions` for gripper links and gripper joint acceleration limits. Hand-E full reopen
+in gz is limited by the finger model; 2F-85 open/close works end-to-end.
+
+---
+
+## Design notes
+
+1. **Shared node + background executor.** Never call `rclpy.spin_once(node)` on a node the
+   executor is already spinning.
+2. **Mimic joints need bullet-featherstone.** DART does not support mimic constraints; both gripper
+   launches pass `--physics-engine gz-physics-bullet-featherstone-plugin`.
+3. **`gz_ros2_control` ignores URDF command limits.** Cap gripper travel in the URDF and/or via
+   client `gripper_finger_max_position` to avoid over-close jamming.
+4. **TRAC-IK Python is unavailable on Jazzy.** `IKSolverType.TRAC_IK`; using EAIK
+   for analytical IK instead.
+5. **Controller renames (ROS 1 → 2):** `scaled_pos_joint_traj_controller` →
+   `scaled_joint_trajectory_controller`; `joint_group_vel_controller` → `forward_velocity_controller`.
+
+---
+
+## Known limitations
+
+- **FT zeroing** tares distal-mass gravity bias only at the pose where you zero; bias is
+  pose-dependent. Model-based gravity compensation would improve robustness across the workspace.
+- **Robotiq real-hardware driver** (`robotiq_control` / pymodbus) is deferred; re-port when needed.
+- **Hand-E MoveIt reopen** is limited by gz finger fidelity (close works; full open is capped).
+- Legacy modules kept off the main import path: `simple_controllers`, `mouse_6d` (spacenav teleop).
+
+---
+
+## License
+
+See [LICENSE](LICENSE).
