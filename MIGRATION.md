@@ -14,7 +14,8 @@ Branch: `jazzy`. Build: `colcon build --symlink-install` (two workspaces: `under
 | `ur_control` | `ament_python` | ✅ Ported & verified (control lib) |
 | `ur_pykdl` | `ament_python` | ✅ Ported & verified (FK/IK via PyKDL) |
 | `ur_control_examples` | `ament_python` | ✅ Ported (keyboard teleop example) |
-| `ur_gripper_gz` | `ament_cmake` | ✅ New — gz-sim bringup (UR + Hand-E / 2F-85) + FT + Cartesian compliance + MoveIt 2 (arm) |
+| `ur_gripper_gz` | `ament_cmake` | ✅ New — gz-sim bringup (UR + Hand-E / 2F-85) + FT + Cartesian compliance |
+| `ur_gripper_gz_moveit_config` | `ament_cmake` | ✅ New — custom MoveIt 2 config (arm + gripper group), parameterized for Hand-E / 2F-85 |
 | `ur_gripper_description` | catkin | Removed; superseded for sim by `ur_gripper_gz` + apt `robotiq_description` |
 | `ur_gripper_gazebo` | catkin | Removed; replaced by `ur_gripper_gz` (gz Harmonic) |
 | `ur_gripper_85_moveit_config` | catkin | ⏸️ `COLCON_IGNORE` — MoveIt 1; regenerate with MSA 2 |
@@ -118,45 +119,53 @@ tares out the ~13 N distal-mass gravity bias (post-zero `/wrench/filtered` reads
 (the FZI controller takes its measurement frame from the `ft_sensor_ref_link` param, not the message
 `frame_id`, so the filter's unstamped output is fine). Zero at a known no-contact pose before use.
 
-**MoveIt 2 (arm-only) — `ur_moveit.launch.py` + `srdf/ur_gripper_gz.srdf.xacro`.** Brings up
-`move_group` for the 6-DOF `ur_manipulator` group, planning + executing to the gz sim's
-`scaled_joint_trajectory_controller`. Run it **after** a gz bringup (it reads `/robot_description`
-from the running sim and reuses the apt `ur_moveit_config` planning pipelines / kinematics /
-`moveit_controllers.yaml`, which already targets `scaled_joint_trajectory_controller` via
-`follow_joint_trajectory`):
-```bash
-ros2 launch ur_gripper_gz ur_gz_control.launch.py gui:=false          # Hand-E
-ros2 launch ur_gripper_gz ur_moveit.launch.py ur_type:=ur3e gripper:=hande
-# or
-ros2 launch ur_gripper_gz ur_2f85_gz_control.launch.py gui:=false     # 2F-85
-ros2 launch ur_gripper_gz ur_moveit.launch.py ur_type:=ur5e gripper:=robotiq_2f85
-```
-The gripper is **not** a planning group (arm-only); it rides along collision-exempt. The only
-custom piece is the SRDF: it wraps `ur_moveit_config`'s `ur_srdf` (arm group + UR self-collisions)
-and adds `disable_collisions` for the gripper links (selected by the `gripper` arg). Without those,
-the gripper links present in `/robot_description` register as start-state self-collisions and every
-plan is rejected (`error_code -10`) — **the apt `ur_moveit_config` alone does not work with a
-gripper-equipped description.** **Verified in gz (headless), both grippers:** a joint-space
-`MoveGroup` goal plans and executes to within ~0.01 rad on the gz arm (`error_code=1`).
+### `ur_gripper_gz_moveit_config` (new — custom MoveIt 2 config)
+
+Self-contained MoveIt 2 config for the gz robots, **parameterized by `ur_type` + `gripper`**
+(one package serves both). Vendors its own planning configs (`config/kinematics.yaml`,
+`joint_limits.yaml`, `ompl_planning.yaml`, `moveit.rviz` — copied from apt `ur_moveit_config`
+so they're free to customize) and a `srdf/ur_gripper_gz.srdf.xacro`. `move_group` reads
+`/robot_description` from the running gz bringup and executes on its controllers.
+
+- **Arm group** `ur_manipulator` → `scaled_joint_trajectory_controller` (`FollowJointTrajectory`).
+- **Gripper group** `gripper` (single actuated joint; mimics follow via the URDF) with `open`/
+  `close` states + an `end_effector` on `tool0`, driven by the per-gripper controller mapping:
+  Hand-E `gripper_controller` is a JTC → **`FollowJointTrajectory`** (`follow_joint_trajectory`);
+  2F-85 `gripper_controller` is a GripperActionController → **`GripperCommand`** (`gripper_cmd`).
+  `moveit_controllers_<gripper>.yaml` selects the right one.
+- **`load_gripper:=false`** drops the gripper group (arm-only planning); the gripper links stay
+  collision-exempt either way.
+
+Gotchas baked into the config:
+- **SRDF `disable_collisions` for gripper links are mandatory.** move_group sees the gripper via
+  `/robot_description`; without disables the rigidly-attached links read as start-state
+  self-collisions and every plan is rejected (`error_code -10`). The apt `ur_moveit_config` alone
+  does **not** work with a gripper-equipped description.
+- **Gripper joints need acceleration limits in `joint_limits.yaml`** or MoveIt's time-optimal
+  parameterization fails (`No acceleration limit ... finger_joint`). Both grippers' joints are listed.
+- **2F-85 knuckle position bound widened** (`min_position: -0.02`): gz rests it at ~-7e-13, a hair
+  below the URDF lower bound `0.0`, and Jazzy's `CheckStartStateBounds` hard-fails on any
+  out-of-bounds revolute start (no tolerance param).
+
+**Verified in gz (headless):** **2F-85** — arm plan+execute (`error_code=1`) **and** gripper
+open↔close via a `MoveGroup` goal on the `gripper` group (knuckle 0 ↔ ~0.78, correct
+`gripper_cmd` action). **Hand-E** — arm plan+execute and gripper *close* work; the finger's full
+reopen is limited by the gz Hand-E finger model (the `gripper_controller` JTC has no goal tolerance,
+so it reports success regardless — same gz quirk the `ur_control` client works around with
+trajectory mode + a travel cap). MoveIt config itself is correct for both.
 
 *Test it* — two terminals (both `source install/setup.bash` first):
 ```bash
 # terminal 1 — sim (headless)
-ros2 launch ur_gripper_gz ur_gz_control.launch.py gui:=false            # Hand-E (ur3e)
-# terminal 2 — MoveIt with RViz (default launch_rviz:=true)
-ros2 launch ur_gripper_gz ur_moveit.launch.py ur_type:=ur3e gripper:=hande
+ros2 launch ur_gripper_gz ur_2f85_gz_control.launch.py gui:=false            # 2F-85 (ur5e)
+# terminal 2 — MoveIt + RViz (launch_rviz defaults true)
+ros2 launch ur_gripper_gz_moveit_config ur_moveit.launch.py ur_type:=ur5e gripper:=robotiq_2f85
+# Hand-E: ur_gz_control.launch.py  +  ur_type:=ur3e gripper:=hande
 ```
-In the RViz **MotionPlanning** panel: drag the orange interactive marker to a new goal, then
-**Plan & Execute** — the arm follows in gz. (2F-85: swap in the `ur_2f85_gz_control.launch.py`
-bringup and `ur_type:=ur5e gripper:=robotiq_2f85`.)
-
-Headless plan+execute check (no RViz) — send a joint-space goal to the `/move_action`
-(`moveit_msgs/action/MoveGroup`) server with `planning_options.plan_only: false`, then confirm
-`result.error_code.val == 1` (SUCCESS) and that `/joint_states` reaches the target:
-```bash
-ros2 launch ur_gripper_gz ur_moveit.launch.py ur_type:=ur3e gripper:=hande launch_rviz:=false
-ros2 action list | grep move_action        # /move_action available once move_group is up
-```
+In RViz **MotionPlanning**: for the arm, pick the `ur_manipulator` group, drag the marker, **Plan
+& Execute**; for the gripper, pick the `gripper` group and plan to the `open` / `close` named state.
+Headless: send a `MoveGroup` goal (`/move_action`, `plan_only:false`) for group `ur_manipulator`
+(joint target) or `gripper` (open/close) and confirm `error_code.val == 1` + `/joint_states` moves.
 
 **Gotcha — FT zeroing must not run against a missing service.** `Arm.zero_ft_sensor()` called the
 real-robot `ur_hardware_interface/zero_ftsensor` whenever `use_gazebo_sim=false`; in sim that service
@@ -214,9 +223,10 @@ ros2 run ur_control_examples joint_position_keyboard
   A model-based gravity-compensation node (constant tool mass/COM) would hold across the workspace.
 - **Robotiq real-hardware driver:** the `robotiq-cri` `robotiq_control` (pymodbus URCAP/RTU/TCP/
   URScript) is deferred (`COLCON_IGNORE`); re-port when real-robot gripper control is needed.
-- **MoveIt 2 (arm-only): DONE** (`ur_moveit.launch.py`, both grippers — see above). Next, if
-  MoveIt needs to actuate the gripper: add a gripper planning group + end-effector to the SRDF
-  (promote the arm-only config to a full one), and drop the legacy `ur_gripper_85_moveit_config` /
-  `ur_hande_moveit_config` (MoveIt 1, `COLCON_IGNORE`d).
+- **MoveIt 2: DONE** — `ur_gripper_gz_moveit_config` (arm + gripper group, both grippers; see
+  above). Remaining MoveIt follow-ups: improve gz Hand-E finger fidelity so MoveIt can fully
+  open/close it (the 2F-85 works); optionally add pick-and-place / grasp configs; and drop the
+  legacy `ur_gripper_85_moveit_config` / `ur_hande_moveit_config` (MoveIt 1, `COLCON_IGNORE`d),
+  now superseded.
 - **Tidy-ups:** fix the `PDRotation` quaternion-type mismatch; port or remove `simple_controllers`
   and `mouse_6d` (teleop) when their consumers are migrated.
