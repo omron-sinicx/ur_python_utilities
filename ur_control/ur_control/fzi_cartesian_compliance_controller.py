@@ -363,7 +363,7 @@ class CompliantController(Arm):
         """
         parameters = {}
         if error_scale:
-            error_scale = error_scale if not self.is_gazebo_sim else error_scale * 0.01
+            error_scale = error_scale
             parameters["solver.error_scale"] = round(error_scale, 4)
         if iterations:
             parameters["solver.iterations"] = int(iterations)

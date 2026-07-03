@@ -234,13 +234,20 @@ class Arm(object):
         else:
             self._ft_sub = self.node.create_subscription(WrenchStamped, filtered_topic, self.__ft_callback__, qos_profile_sensor_data)
 
+            # Only bind the (synchronous) service calls if the service is actually up:
+            # client.call() has no timeout and blocks forever against a missing service.
             zero_ft_filtered_client = self.node.create_client(Empty, filtered_topic + '/zero_ftsensor')
-            zero_ft_filtered_client.wait_for_service(timeout_sec=2.0)
-            self._zero_ft_filtered = lambda: zero_ft_filtered_client.call(Empty.Request())
+            if zero_ft_filtered_client.wait_for_service(timeout_sec=2.0):
+                self._zero_ft_filtered = lambda: zero_ft_filtered_client.call(Empty.Request())
+            else:
+                self.node.get_logger().warn('%s unavailable; FT zeroing disabled' % zero_ft_filtered_client.srv_name)
+                self._zero_ft_filtered = lambda: None
 
             ft_filter_client = self.node.create_client(SetBool, filtered_topic + '/enable_filtering')
-            ft_filter_client.wait_for_service(timeout_sec=1.0)
-            self._ft_filtered = lambda active=True: ft_filter_client.call(SetBool.Request(data=bool(active)))
+            if ft_filter_client.wait_for_service(timeout_sec=1.0):
+                self._ft_filtered = lambda active=True: ft_filter_client.call(SetBool.Request(data=bool(active)))
+            else:
+                self._ft_filtered = lambda active=True: None
 
             # Check that the FT topic is publishing
             if not utils.wait_for(lambda: self.current_ft_value is not None, timeout=2.0):
@@ -250,8 +257,13 @@ class Arm(object):
         self.use_gazebo_sim = bool(utils.read_parameter(self.node, "use_gazebo_sim", False))
         if not self.use_gazebo_sim:
             zero_ft_client = self.node.create_client(Trigger, self.ns + 'ur_hardware_interface/zero_ftsensor')
-            zero_ft_client.wait_for_service(timeout_sec=2.0)
-            self._zero_ft = lambda: zero_ft_client.call(Trigger.Request())
+            # Guard the blocking call: without the UR driver (e.g. gz sim mistakenly run with
+            # use_gazebo_sim=false) this service never exists and client.call() hangs forever.
+            if zero_ft_client.wait_for_service(timeout_sec=2.0):
+                self._zero_ft = lambda: zero_ft_client.call(Trigger.Request())
+            else:
+                self.node.get_logger().warn('%s unavailable; skipping hardware FT zeroing' % zero_ft_client.srv_name)
+                self._zero_ft = lambda: None
         else:
             self._zero_ft = lambda: None
 

@@ -33,7 +33,7 @@
   <xacro:arg name="spawn_x" default="0.0"/>
   <xacro:arg name="spawn_y" default="0.0"/>
   <xacro:arg name="spawn_z" default="0.0"/>
-  <xacro:arg name="spawn_yaw" default="-1.5707"/>
+  <xacro:arg name="spawn_yaw" default="1.5707"/>
 
   <link name="world"/>
 
@@ -61,6 +61,27 @@
         <namespace>$(arg ros_namespace)</namespace>
       </ros>
     </plugin>
+    <!-- gz force_torque sensors are inert without this system (stock empty.sdf does
+         not load it). It scans the world for force_torque sensors, computes each
+         joint's reaction wrench, and publishes it on the sensor's gz topic, which
+         gz_ros2_control auto-discovers and exposes as the tcp_fts_sensor interfaces. -->
+    <plugin filename="gz-sim-forcetorque-system" name="gz::sim::systems::ForceTorque"/>
+  </gazebo>
+
+  <!-- Wrist force-torque sensor. Attached to wrist_3_joint (a real revolute joint, so
+       bullet-featherstone always models it as a constraint and reports its reaction
+       wrench — a fixed joint at ft_frame would be lumped away). Reported in the child
+       (wrist_3_link) frame; the broadcaster stamps frame_id=wrist_3_link and downstream
+       consumers transform via TF. Name MUST match the <sensor> in the ros2_control xacro. -->
+  <gazebo reference="$(arg tf_prefix)wrist_3_joint">
+    <sensor name="$(arg tf_prefix)tcp_fts_sensor" type="force_torque">
+      <always_on>true</always_on>
+      <update_rate>500</update_rate>
+      <force_torque>
+        <frame>child</frame>
+        <measure_direction>child_to_parent</measure_direction>
+      </force_torque>
+    </sensor>
   </gazebo>
 
   <!-- Home pose from ur_gripper_hande_cubes.launch spawn joint values -->

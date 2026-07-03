@@ -45,7 +45,7 @@ np.set_printoptions(linewidth=np.inf)
 
 
 def move_joints(arm):
-    q = [1.4817, -2.0874, 1.7722, -1.2554, -1.5669, 0.0189]
+    q = [1.5689, -1.0497, 1.4306, -1.998, -1.5684, 0.0003]
     arm.set_joint_positions(positions=q, target_time=3, wait=True)
 
 
@@ -111,14 +111,15 @@ def move_force(arm):
     arm.zero_ft_sensor()
 
     arm.set_control_mode("parallel")
+    arm.set_solver_parameters(error_scale=0.8, iterations=1)
+
     selection_matrix = [1, 1, 0, 1, 1, 1]
     arm.update_selection_matrix(selection_matrix)
 
-    arm.set_solver_parameters(error_scale=0.5, iterations=1)
-    arm.update_stiffness([1500, 1500, 1500, 100, 100, 100])
+    arm.update_stiffness([500, 500, 500, 100, 100, 100])
 
-    p_gains = [0.05, 0.05, 0.1, 1.5, 1.5, 1.5]
-    d_gains = [0.005, 0.005, 0.005, 0, 0, 0]
+    p_gains = [0.05, 0.05, 0.05, 1.5, 1.5, 1.5]
+    d_gains = [0.0, 0.0, 0.0, 0, 0, 0]
     arm.update_pd_gains(p_gains, d_gains)
 
     ee = arm.end_effector()
@@ -279,6 +280,13 @@ def main(args=None):
 
     rclpy.init(args=args)
     node = Node('cartesian_compliance_controller_examples')
+
+    # These examples target the gz sim by default. use_gazebo_sim scales solver.error_scale
+    # (see CompliantController.set_solver_parameters) and, with use_real_robot=false, keeps the
+    # arm from calling UR-driver-only services (e.g. hardware FT zeroing). Override for real HW:
+    #   ros2 run ... --ros-args -p use_gazebo_sim:=false -p use_real_robot:=true
+    node.declare_parameter('use_gazebo_sim', True)
+    node.declare_parameter('use_real_robot', False)
 
     executor = MultiThreadedExecutor()
     executor.add_node(node)

@@ -86,6 +86,43 @@ Self-contained `gz_ros2_control` bringups for UR + gripper:
 **Verified in gz (headless):** UR arm JTC move + gripper open/close + all mimic joints articulate,
 for both Hand-E and 2F-85, driven through `ur_control`.
 
+**Force-torque sensor (Hand-E bringup):** a gz `force_torque` sensor (`tcp_fts_sensor`) on
+`wrist_3_joint` + the `gz-sim-forcetorque-system` plugin (stock `empty.sdf` doesn't load it),
+read by the `force_torque_sensor_broadcaster` and **published on `/wrench`** (remapped from the
+broadcaster's `~/wrench` via `--controller-ros-args`, matching `ur_control`'s `FT_SUBSCRIBER`).
+Upstream `ur_simulation_gz` ships **no** FT sensor, so this is new. Attached to the revolute
+`wrist_3_joint` (not the canonical `ft_frame` fixed joint, which bullet-featherstone lumps away);
+reported in the `wrist_3_link` frame, so downstream consumers transform via TF.
+**Verified in gz (headless):** `/wrench` at 500 Hz, frame `wrist_3_link`, ~13.4 N at the home
+pose — consistent with the distal mass (wrist_3 + coupler + Hand-E ≈ 1.4 kg) under gravity.
+
+**Cartesian compliance (Hand-E bringup):** the FZI `cartesian_compliance_controller` is loaded
+**inactive** in `ur_gz_controllers.yaml` (`robot_base_link=base_link`, `end_effector_link` /
+`compliance_ref_link=gripper_tip_link`, `ft_sensor_ref_link=wrist_3_link`, `command_interfaces:
+position`) and switched on by `ur_control`'s `CompliantController`. It conflicts with
+`scaled_joint_trajectory_controller` on the position command interfaces, so only one runs at a
+time. Its FT input (`~/ft_sensor_wrench`) is remapped at spawn to **`/wrench/filtered`** (the
+gravity-compensated topic — see `ft_filter` below); the client publishes `~/target_frame` +
+`~/target_wrench`, which already match the controller's own topics.
+**Verified in gz (headless), driven through `CompliantController`:** the controller activates,
+tracks target poses and target wrenches, stops on a target-force condition, and switches back to
+the JTC afterward.
+
+**FT filtering + zeroing (`ft_filter`).** The bringup runs `ur_control_examples/ft_filter -t wrench`,
+which Butterworth-filters `/wrench` → `/wrench/filtered` and offers `/wrench/filtered/zero_ftsensor`.
+`ur_control`'s `Arm` prefers the filtered topic and uses that service for `zero_ft_sensor()`, which
+tares out the ~13 N distal-mass gravity bias (post-zero `/wrench/filtered` reads ≈0). The
+`cartesian_compliance_controller` also consumes `/wrench/filtered`, so it runs on the zeroed wrench
+(the FZI controller takes its measurement frame from the `ft_sensor_ref_link` param, not the message
+`frame_id`, so the filter's unstamped output is fine). Zero at a known no-contact pose before use.
+
+**Gotcha — FT zeroing must not run against a missing service.** `Arm.zero_ft_sensor()` called the
+real-robot `ur_hardware_interface/zero_ftsensor` whenever `use_gazebo_sim=false`; in sim that service
+never exists and the no-timeout `client.call()` **hung forever** (looked like "compliance example
+freezes, never moves, never ends"). Fixed two ways: `__init_ft_sensor__` now binds the FT service
+lambdas only when `wait_for_service` succeeds (else logged no-op), and the compliance example declares
+`use_gazebo_sim=true`/`use_real_robot=false` by default (override via `--ros-args -p` for real HW).
+
 ---
 
 ## Key design notes / gotchas (read before extending)
@@ -125,10 +162,15 @@ ros2 run ur_control_examples joint_position_keyboard
 
 ## What's next
 
-- **Spike 2, second half — FT + Cartesian compliance in gz:** add a force-torque sensor + the
-  `force_torque_sensor_broadcaster` (publish on `/wrench`), load the
-  `cartesian_compliance_controller`, and validate `fzi_cartesian_compliance_controller` driving a
-  compliant motion in gz. (`SetParameters` path already verified vs. the mock driver.)
+- **Spike 2 — FT + Cartesian compliance in gz: DONE.** Both halves verified in gz (see above):
+  `/wrench` live, and `cartesian_compliance_controller` driving force + motion through
+  `CompliantController`, switching cleanly against the JTC.
+- **Port FT + compliance to the 2F-85 bringup:** replicate the FT sensor + compliance wiring in
+  `ur_gripper_2f85_gz.urdf.xacro` + `ur_gz_2f85_controllers.yaml` + `ur_2f85_gz_control.launch.py`
+  (currently Hand-E only).
+- **FT gravity compensation robustness:** the `ft_filter` zeroing tares the distal-mass bias only at
+  the pose where you zero it — the bias is pose-dependent, so it reappears as the arm reconfigures.
+  A model-based gravity-compensation node (constant tool mass/COM) would hold across the workspace.
 - **Robotiq real-hardware driver:** the `robotiq-cri` `robotiq_control` (pymodbus URCAP/RTU/TCP/
   URScript) is deferred (`COLCON_IGNORE`); re-port when real-robot gripper control is needed.
 - **MoveIt 2 configs:** regenerate `ur_gripper_85_moveit_config` / `ur_hande_moveit_config` with

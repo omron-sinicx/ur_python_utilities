@@ -74,6 +74,14 @@ def generate_launch_description():
         package="ur_control", executable="active_gripper_publisher",
         parameters=[{"gripper": "robotiq_hande"}], output="screen")
 
+    # Butterworth-filter + zeroable republish of the FT sensor: subscribes to /wrench (from the
+    # broadcaster) and publishes /wrench/filtered plus a /wrench/filtered/zero_ftsensor service.
+    # ur_control's Arm prefers the filtered topic and needs that service for zero_ft_sensor().
+    ft_filter = Node(
+        package="ur_control_examples", executable="ft_filter",
+        arguments=["-t", "wrench"],
+        parameters=[{"use_sim_time": True}], output="screen")
+
     # bullet-featherstone is REQUIRED for the Hand-E mimic finger (default DART has no
     # mimic-constraint support).
     gz_args = PythonExpression(
@@ -104,6 +112,20 @@ def generate_launch_description():
             "--controller-manager-timeout", "120",
         ],
     )
+    # Publishes the wrist FT sensor on /wrench so ur_control's Arm reads it unchanged
+    # (FT_SUBSCRIBER='wrench'). --controller-ros-args remaps the controller node itself
+    # (the broadcaster publishes ~/wrench); a Node-level remap would only touch the
+    # short-lived spawner process, not the controller running inside controller_manager.
+    fts_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=[
+            "force_torque_sensor_broadcaster", "-c", "/controller_manager",
+            "--controller-manager-timeout", "120",
+            "--controller-ros-args", "-r /force_torque_sensor_broadcaster/wrench:=/wrench",
+        ],
+    )
     jtc_spawner = Node(
         package="controller_manager",
         executable="spawner",
@@ -120,6 +142,20 @@ def generate_launch_description():
         arguments=[
             "forward_velocity_controller", "-c", "/controller_manager",
             "--inactive", "--controller-manager-timeout", "120",
+        ],
+    )
+    # FZI Cartesian compliance controller: inactive at startup (conflicts with the JTC on
+    # the position interfaces), switched on by ur_control's CompliantController. Its FT input
+    # (~/ft_sensor_wrench) is remapped to /wrench, where the FT broadcaster publishes.
+    compliance_spawner = Node(
+        package="controller_manager",
+        executable="spawner",
+        output="screen",
+        arguments=[
+            "cartesian_compliance_controller", "-c", "/controller_manager",
+            "--inactive", "--controller-manager-timeout", "120",
+            "--controller-ros-args",
+            "-r /cartesian_compliance_controller/ft_sensor_wrench:=/wrench/filtered",
         ],
     )
     gripper_spawner = Node(
@@ -144,10 +180,12 @@ def generate_launch_description():
         robot_state_publisher,
         clock_bridge,
         active_gripper_pub,
+        ft_filter,
         gz_sim,
         spawn_entity_delayed,
         RegisterEventHandler(OnProcessExit(target_action=spawn_entity, on_exit=[jsb_spawner])),
-        RegisterEventHandler(OnProcessExit(target_action=jsb_spawner, on_exit=[jtc_spawner])),
+        RegisterEventHandler(OnProcessExit(target_action=jsb_spawner, on_exit=[fts_spawner, jtc_spawner])),
         RegisterEventHandler(
-            OnProcessExit(target_action=jtc_spawner, on_exit=[fvc_spawner, gripper_spawner])),
+            OnProcessExit(target_action=jtc_spawner,
+                          on_exit=[fvc_spawner, compliance_spawner, gripper_spawner])),
     ])

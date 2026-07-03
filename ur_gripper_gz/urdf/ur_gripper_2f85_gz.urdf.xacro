@@ -31,7 +31,7 @@
     physical_parameters_file="$(find ur_description)/config/$(arg ur_type)/physical_parameters.yaml"
     visual_parameters_file="$(find ur_description)/config/$(arg ur_type)/visual_parameters.yaml"
     safety_limits="false" safety_pos_margin="0.15" safety_k_position="20" force_abs_paths="true">
-    <origin xyz="0 0 0" rpy="0 0 0"/>
+    <origin xyz="0 0 0" rpy="0 0 1.5707"/>
   </xacro:ur_robot>
 
   <!-- mount the gripper on the UR tool flange -->
