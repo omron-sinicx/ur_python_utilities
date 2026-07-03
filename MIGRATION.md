@@ -15,8 +15,8 @@ Branch: `jazzy`. Build: `colcon build --symlink-install` (two workspaces: `under
 | `ur_pykdl` | `ament_python` | ✅ Ported & verified (FK/IK via PyKDL) |
 | `ur_control_examples` | `ament_python` | ✅ Ported (keyboard teleop example) |
 | `ur_gripper_gz` | `ament_cmake` | ✅ New — gz-sim bringup (UR + Hand-E / 2F-85) |
-| `ur_gripper_description` | catkin | ⏸️ `COLCON_IGNORE` — ROS 1; superseded for sim by `ur_gripper_gz` + apt `robotiq_description` |
-| `ur_gripper_gazebo` | catkin | ⏸️ `COLCON_IGNORE` — Classic-Gazebo; replaced by `ur_gripper_gz` (gz Harmonic) |
+| `ur_gripper_description` | catkin | Removed; superseded for sim by `ur_gripper_gz` + apt `robotiq_description` |
+| `ur_gripper_gazebo` | catkin | Removed; replaced by `ur_gripper_gz` (gz Harmonic) |
 | `ur_gripper_85_moveit_config` | catkin | ⏸️ `COLCON_IGNORE` — MoveIt 1; regenerate with MSA 2 |
 | `ur_hande_moveit_config` | catkin | ⏸️ `COLCON_IGNORE` — MoveIt 1; regenerate with MSA 2 |
 
@@ -175,7 +175,5 @@ ros2 run ur_control_examples joint_position_keyboard
   URScript) is deferred (`COLCON_IGNORE`); re-port when real-robot gripper control is needed.
 - **MoveIt 2 configs:** regenerate `ur_gripper_85_moveit_config` / `ur_hande_moveit_config` with
   MoveIt Setup Assistant 2 (the catkin ones are `COLCON_IGNORE`d).
-- **Decide on `ur_gripper_description` / `ur_gripper_gazebo`:** port to gz Harmonic or drop in favor
-  of `ur_gripper_gz` + apt `robotiq_description`.
 - **Tidy-ups:** fix the `PDRotation` quaternion-type mismatch; port or remove `simple_controllers`
   and `mouse_6d` (teleop) when their consumers are migrated.
