@@ -1,27 +1,23 @@
 #!/bin/bash
-# Generates a docker image with the relevant settings for the DOCKER_PROJECT.
-# Context-sensitive behaviour: If the <user> parameter "gitlab-ci" is used, 
-# the script builds the image without trying to download it.
+# Build the ur_python_utilities ROS 2 Jazzy Docker image.
 #
-# Usage: ./BUILD-DOCKER-IMAGE.bash <optional: user>
-#
-# @param <user> [optional parameter] for docker container naming during spin-up and to set different behavior.
-#                  Default value: $USER - the image is pulled from repo, or built as fallback.
-#                  If <user> is "gitlab-ci" the image is directly build from scratch - as if done in gitlab-ci.
+# Usage: ./docker/BUILD-DOCKER-IMAGE.sh [optional: project_name]
+#   project_name defaults to $USER (docker compose project prefix).
 ################################################################################
 
-# Set the Docker container name from a project name (first argument).
-# If no argument is given, use the current user name as the project name.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
 DOCKER_PROJECT=$1
 if [ -z "${DOCKER_PROJECT}" ]; then
   DOCKER_PROJECT=${USER}
 fi
-DOCKER_CONTAINER="${DOCKER_PROJECT}_ros_ur_1"
+DOCKER_CONTAINER="${DOCKER_PROJECT}-ur-python-utilities-1"
 echo "$0: DOCKER_PROJECT=${DOCKER_PROJECT}"
 echo "$0: DOCKER_CONTAINER=${DOCKER_CONTAINER}"
 
-# Stop and remove the Docker container.
-EXISTING_DOCKER_CONTAINER_ID=`docker ps -aq -f name=${DOCKER_CONTAINER}`
+EXISTING_DOCKER_CONTAINER_ID=$(docker ps -aq -f name=${DOCKER_CONTAINER})
 if [ ! -z "${EXISTING_DOCKER_CONTAINER_ID}" ]; then
   echo "Stop the container ${DOCKER_CONTAINER} with ID: ${EXISTING_DOCKER_CONTAINER_ID}."
   docker stop ${EXISTING_DOCKER_CONTAINER_ID}
@@ -29,4 +25,6 @@ if [ ! -z "${EXISTING_DOCKER_CONTAINER_ID}" ]; then
   docker rm ${EXISTING_DOCKER_CONTAINER_ID}
 fi
 
-docker-compose -p ${DOCKER_PROJECT} -f ./docker/docker-compose.yml build
+export DOCKERFILE_COMMIT_SHORT_SHA="$(git log -n 1 --pretty=format:%h docker/Dockerfile 2>/dev/null || echo unknown)"
+
+docker compose -p ${DOCKER_PROJECT} -f ./docker/docker-compose.yml build

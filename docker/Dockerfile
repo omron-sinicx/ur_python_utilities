@@ -1,86 +1,169 @@
-# Docker for ur3 repo
-# ros-noetic-base, gazebo11, python3 libraries 
-# Python3 3 version
+# ROS 2 Jazzy dev image for ur_python_utilities (UR control + gz-sim bringup).
+# Mirrors the parent osx_robot_env docker/dev/Dockerfile (Ubuntu 24.04 + CUDA + Jazzy).
+# OpenGL for RViz2 / gz GUI comes from the NVIDIA container runtime
+# (NVIDIA_DRIVER_CAPABILITIES=all in docker-compose.yml) plus the GL libs below.
+#
+# Build context: ur_python_utilities repo root (see docker-compose.yml).
+# Source is bind-mounted at runtime; colcon build via docker/scripts/initialize-colcon-workspace.sh.
 
-FROM osrf/ros:noetic-desktop-full
-LABEL maintainer Cristian Beltran "beltran@hlab.sys.es.osaka-u.ac.jp"
+FROM nvidia/cuda:12.6.0-devel-ubuntu24.04
 
-ENV ROS_DISTRO noetic
+RUN echo 'Asia/Tokyo' > /etc/timezone && \
+    ln -s /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
+    apt-get update && \
+    apt-get upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -q -y --no-install-recommends tzdata && \
+    rm -rf /var/lib/apt/lists/*
 
-# install universal robot ros packages
-RUN apt-get update && apt-get install -y \
-    # ROS utils 
-    ros-$ROS_DISTRO-gazebo-ros-pkgs \
-    ros-$ROS_DISTRO-spacenav-node \
-    ros-$ROS_DISTRO-rqt-common-plugins \
-    ros-$ROS_DISTRO-rqt-joint-trajectory-controller \
-    ros-$ROS_DISTRO-rqt-tf-tree \
-    ros-$ROS_DISTRO-rqt-multiplot \
-    ros-$ROS_DISTRO-moveit \
-    # install catkin
-    ros-$ROS_DISTRO-catkin \
-    python3-catkin-tools \
-    # utils
+ENV ROS_DISTRO=jazzy
+
+################################################################################
+# Locale: ROS 2 requires a UTF-8 locale.
+RUN apt-get update && apt-get install -q -y --no-install-recommends locales && \
+    locale-gen en_US en_US.UTF-8 && \
+    update-locale LC_ALL=en_US.UTF-8 LANG=en_US.UTF-8 && \
+    rm -rf /var/lib/apt/lists/*
+ENV LANG=en_US.UTF-8
+ENV LC_ALL=en_US.UTF-8
+ENV LANGUAGE=en_US.UTF-8
+
+################################################################################
+# Bootstrap tools + apt sources for ROS 2 and Gazebo.
+RUN apt-get update && apt-get install -q -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    gnupg2 \
+    lsb-release \
+    software-properties-common \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN add-apt-repository universe
+
+RUN curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+        -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu noble main" \
+        | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
+RUN curl -sSL https://packages.osrfoundation.org/gazebo.gpg \
+        -o /usr/share/keyrings/pkgs-osrf-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/pkgs-osrf-archive-keyring.gpg] http://packages.osrfoundation.org/gazebo/ubuntu-stable noble main" \
+        | tee /etc/apt/sources.list.d/gazebo-stable.list > /dev/null
+
+################################################################################
+# Core ROS 2 desktop + colcon/rosdep tooling.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-${ROS_DISTRO}-desktop \
+    ros-dev-tools \
+    python3-colcon-common-extensions \
+    python3-colcon-mixin \
+    python3-rosdep \
+    python3-vcstool \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rosdep init && rosdep update --rosdistro ${ROS_DISTRO}
+
+################################################################################
+# MoveIt 2, ros2_control, and Gazebo Harmonic integration.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-${ROS_DISTRO}-moveit \
+    ros-${ROS_DISTRO}-moveit-visual-tools \
+    ros-${ROS_DISTRO}-ros2-control \
+    ros-${ROS_DISTRO}-ros2-controllers \
+    ros-${ROS_DISTRO}-controller-manager \
+    ros-${ROS_DISTRO}-joint-state-publisher \
+    ros-${ROS_DISTRO}-joint-state-publisher-gui \
+    ros-${ROS_DISTRO}-xacro \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gz-harmonic \
+    ros-${ROS_DISTRO}-ros-gz \
+    ros-${ROS_DISTRO}-gz-ros2-control \
+    && rm -rf /var/lib/apt/lists/*
+
+################################################################################
+# UR driver/sim, Robotiq description, kinematics, and Python/KDL deps.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-${ROS_DISTRO}-ur \
+    ros-${ROS_DISTRO}-ur-simulation-gz \
+    ros-${ROS_DISTRO}-robotiq-description \
+    ros-${ROS_DISTRO}-trac-ik \
+    ros-${ROS_DISTRO}-trac-ik-kinematics-plugin \
+    python3-pykdl \
+    python3-matplotlib \
+    && rm -rf /var/lib/apt/lists/*
+
+################################################################################
+# OpenGL / GUI runtime libs (RViz2 + gz GUI).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglvnd0 \
+    libgl1 \
+    libgl1-mesa-dri \
+    libglx-mesa0 \
+    libegl1 \
+    libgles2 \
+    mesa-utils \
+    && rm -rf /var/lib/apt/lists/*
+
+################################################################################
+# Developer tools.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    apt-transport-https \
+    build-essential \
+    clang-format \
+    cmake \
     git \
-    locate \
-    aptitude \
-    vim htop \
-    curl wget \
-    spacenavd \
-    python-is-python3 \
+    python3-dev \
     python3-pip \
+    python3-setuptools \
+    python-is-python3 \
+    wget \
+    locate \
     && rm -rf /var/lib/apt/lists/*
 
-### Ros Workspace ###
-# Set up the workspace
-RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash \
-               && mkdir -p ~/ros_ws/src \
-               && cd ~/ros_ws/src \
-               && git clone https://github.com/cambel/ur3.git ros-ur -b noetic-devel"
-
-# Updating ROSDEP and installing dependencies
-RUN cd ~/ros_ws \
-    && rosinstall ~/ros_ws/src /opt/ros/$ROS_DISTRO src/ros-ur/dependencies.rosinstall \
-    && apt-get update \
-    && rosdep fix-permissions \
-    && rosdep update \
-    && rosdep install --from-paths src --ignore-src --rosdistro=$ROS_DISTRO -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gdb \
+    htop \
+    inetutils-ping \
+    iproute2 \
+    less \
+    nano \
+    net-tools \
+    openssh-client \
+    python3-tk \
+    sshpass \
+    unzip \
+    usbutils \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
-ENV PYTHONIOENCODING UTF-8
+################################################################################
+# Python runtime deps for ur_control / ur_pykdl.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-scipy \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir --break-system-packages numpy-quaternion
 
-## Python3 libraries ##
-RUN python3 -m pip install pip --upgrade && \
-    pip install matplotlib==2.2.3 spicy protobuf pyyaml pyquaternion rospkg \
-    lxml tqdm catkin-pkg empy PyVirtualDisplay defusedxml gym psutil pyprind
+################################################################################
+# Speed up colcon/CMake builds with ccache.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ccache \
+    && rm -rf /var/lib/apt/lists/*
+RUN echo 'export PATH=/usr/lib/ccache:$PATH' >> $HOME/.bashrc
 
-# # Compiling ros workspace
-RUN /bin/bash -c "source /opt/ros/$ROS_DISTRO/setup.bash \
-               && cd ~/ros_ws/ \
-               && rm -rf build \
-               && catkin build"
+################################################################################
+# Colcon workspace skeleton (sources bind-mounted at runtime).
+WORKDIR /root/ws
+RUN mkdir -p src
 
-################################################
-# Custom python3 libs
-################################################
-# ur_ikfast
-# RUN /bin/bash -c "cd ~/ \
-#                && mkdir pylibs && cd pylibs \
-#                && git clone https://github.com/cambel/ur_ikfast.git \
-#                && cd ur_ikfast && pip install -e ."
+COPY ./docker/scripts/. /root/ws/docker/scripts/
+RUN chmod -R +x /root/ws/docker/scripts/*
 
-# Download gazebo models only once
-RUN mkdir -p ~/.gazebo
-RUN git clone https://github.com/osrf/gazebo_models ~/.gazebo/models
+RUN echo "source /root/ws/docker/scripts/initialize-bash-shell.sh" >> /root/.bashrc
+RUN sed -i 's/#force_color_prompt=yes/force_color_prompt=yes/' /root/.bashrc
 
-ENV NVIDIA_VISIBLE_DEVICES ${NVIDIA_VISIBLE_DEVICES:-all}
-ENV NVIDIA_DRIVER_CAPABILITIES ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
+ARG DOCKERFILE_COMMIT_SHORT_SHA
+ENV DOCKER_IMAGE_VERSION_ur_python_utilities=${DOCKERFILE_COMMIT_SHORT_SHA}
 
-# setup environment
-EXPOSE 11345
-
-RUN echo 'source /opt/ros/$ROS_DISTRO/setup.bash' >> ~/.bashrc
-RUN echo 'source ~/ros_ws/devel/setup.bash' >> ~/.bashrc
-
-RUN echo 'source /usr/share/gazebo/setup.sh' >> ~/.bashrc
-RUN echo 'export GAZEBO_RESOURCE_PATH=$GAZEBO_RESOURCE_PATH:~/ros_ws/src/ros-universal-robots/ur_gripper_gazebo/models/' >> ~/.bashrc
+ENTRYPOINT []
+CMD ["/bin/bash"]

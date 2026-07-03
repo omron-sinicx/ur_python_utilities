@@ -1,28 +1,25 @@
 #!/bin/bash
-
+# Run the ur_python_utilities ROS 2 Docker container and open a shell.
+#
+# Usage: ./docker/RUN-DOCKER.sh [optional: project_name]
 ################################################################################
-export DOCKER_RUNTIME=nvidia
 
-# Set the Docker container name from a project name (first argument).
-# If no argument is given, use the current user name as the project name.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${REPO_ROOT}"
+
+export DOCKER_RUNTIME=${DOCKER_RUNTIME:-nvidia}
+
 PROJECT=$1
 if [ -z "${PROJECT}" ]; then
   PROJECT=${USER}
 fi
-CONTAINER="${PROJECT}_ros_ur_1"
+CONTAINER="${PROJECT}-ur-python-utilities-1"
 echo "$0: PROJECT=${PROJECT}"
 echo "$0: CONTAINER=${CONTAINER}"
 
-# Run the Docker container in the background.
-# Any changes made to './docker/docker-compose.yml' will recreate and overwrite the container.
-docker-compose -p ${PROJECT} -f ./docker/docker-compose.yml up -d
+docker compose -p ${PROJECT} -f ./docker/docker-compose.yml up -d
 
-################################################################################
-
-# Display GUI through X Server by granting full access to any external client.
 xhost +
 
-################################################################################
-
-# Enter the Docker container with a Bash shell (with or without a custom).
 docker exec -it ${CONTAINER} bash
