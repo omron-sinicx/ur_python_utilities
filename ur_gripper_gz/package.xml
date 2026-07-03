@@ -22,6 +22,11 @@
   <exec_depend>gz_ros2_control</exec_depend>
   <exec_depend>joint_state_broadcaster</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
+  <!-- MoveIt 2 arm bringup (ur_moveit.launch.py) -->
+  <exec_depend>moveit_configs_utils</exec_depend>
+  <exec_depend>moveit_ros_move_group</exec_depend>
+  <exec_depend>ur_moveit_config</exec_depend>
+  <exec_depend>rviz2</exec_depend>
   <exec_depend>position_controllers</exec_depend>
   <exec_depend>robot_state_publisher</exec_depend>
   <!-- active_gripper_publisher (bringup) -->

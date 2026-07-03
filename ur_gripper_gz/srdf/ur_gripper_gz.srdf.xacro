@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MoveIt 2 semantic description for the ur_gripper_gz bringups.
+
+  Wraps the upstream ur_moveit_config arm SRDF (the `ur_manipulator` planning group +
+  UR self-collision rules) and adds disable_collisions for the gripper links. move_group
+  reads robot_description (arm + gripper) from the running gz bringup's topic, so without
+  these the rigidly-attached gripper links register as start-state self-collisions and every
+  plan is rejected (error -10). This is an ARM-ONLY MoveIt config: the gripper is not a
+  planning group; its links are simply exempted from collision (they never move during arm
+  planning). Pick the set with the `gripper` arg (hande | robotiq_2f85).
+-->
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="$(arg name)">
+
+  <xacro:arg name="name" default="ur"/>
+  <xacro:arg name="gripper" default="hande"/>
+
+  <xacro:include filename="$(find ur_moveit_config)/srdf/ur_macro.srdf.xacro"/>
+  <xacro:ur_srdf/>
+
+  <!-- Robotiq Hand-E -->
+  <xacro:if value="${'$(arg gripper)' == 'hande'}">
+    <disable_collisions link1="flange" link2="hand_e_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="hande_left_finger" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="hande_right_finger" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_coupler" reason="Adjacent"/>
+    <disable_collisions link1="hand_e_link" link2="hande_left_finger" reason="Adjacent"/>
+    <disable_collisions link1="hand_e_link" link2="hande_right_finger" reason="Adjacent"/>
+    <disable_collisions link1="hand_e_link" link2="robotiq_coupler" reason="Adjacent"/>
+    <disable_collisions link1="hand_e_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="hand_e_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="hande_left_finger" link2="hande_right_finger" reason="Adjacent"/>
+    <disable_collisions link1="hande_left_finger" link2="robotiq_coupler" reason="Adjacent"/>
+    <disable_collisions link1="hande_left_finger" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="hande_left_finger" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="hande_right_finger" link2="robotiq_coupler" reason="Adjacent"/>
+    <disable_collisions link1="hande_right_finger" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="hande_right_finger" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_coupler" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_coupler" link2="wrist_3_link" reason="Adjacent"/>
+  </xacro:if>
+
+  <!-- Robotiq 2F-85 (PickNik robotiq_description + ur_to_robotiq adapter) -->
+  <xacro:if value="${'$(arg gripper)' == 'robotiq_2f85'}">
+    <disable_collisions link1="flange" link2="gripper_mount_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_base_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_left_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_left_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_left_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="flange" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_base_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_left_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_left_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_left_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="gripper_mount_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_left_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_left_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_left_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_base_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_left_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_left_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_left_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_finger_tip_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="robotiq_85_left_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_inner_knuckle_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="robotiq_85_right_finger_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_left_knuckle_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="robotiq_85_right_finger_tip_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_tip_link" link2="robotiq_85_right_inner_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_tip_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_tip_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_tip_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_finger_tip_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_inner_knuckle_link" link2="robotiq_85_right_knuckle_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_inner_knuckle_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_inner_knuckle_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_inner_knuckle_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_knuckle_link" link2="tool0" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_knuckle_link" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="robotiq_85_right_knuckle_link" link2="wrist_3_link" reason="Adjacent"/>
+    <disable_collisions link1="tool0" link2="ur_to_robotiq_link" reason="Adjacent"/>
+    <disable_collisions link1="ur_to_robotiq_link" link2="wrist_3_link" reason="Adjacent"/>
+  </xacro:if>
+
+</robot>

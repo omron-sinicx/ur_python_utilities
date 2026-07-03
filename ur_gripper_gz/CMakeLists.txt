@@ -7,7 +7,7 @@ find_package(ament_cmake REQUIRED)
 set(ROBOTIQ_CRI_MESHES
   ${CMAKE_CURRENT_SOURCE_DIR}/../../third_party/robotiq-cri/robotiq_description/meshes)
 
-install(DIRECTORY config launch urdf
+install(DIRECTORY config launch urdf srdf
   DESTINATION share/${PROJECT_NAME}
 )
 install(DIRECTORY ${ROBOTIQ_CRI_MESHES}/hande

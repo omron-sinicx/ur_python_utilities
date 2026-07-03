@@ -41,6 +41,14 @@ def generate_launch_description():
         package="ur_control", executable="active_gripper_publisher",
         parameters=[{"gripper": gripper}], output="screen")
 
+    # Butterworth-filter + zeroable republish of the FT sensor: /wrench -> /wrench/filtered
+    # plus a /wrench/filtered/zero_ftsensor service. ur_control's Arm prefers the filtered
+    # topic and needs that service for zero_ft_sensor().
+    ft_filter = Node(
+        package="ur_control_examples", executable="ft_filter",
+        arguments=["-t", "wrench"],
+        parameters=[{"use_sim_time": True}], output="screen")
+
     pkg = FindPackageShare("ur_gripper_gz")
     controllers_file = PathJoinSubstitution([pkg, "config", "ur_gz_2f85_controllers.yaml"])
     xacro_file = PathJoinSubstitution([pkg, "urdf", "ur_gripper_2f85_gz.urdf.xacro"])
@@ -78,6 +86,11 @@ def generate_launch_description():
     jsb = spawner("joint_state_broadcaster")
     jtc = spawner("scaled_joint_trajectory_controller")
     gc = spawner("gripper_controller")
+    # Publish the wrist FT sensor on /wrench (remapped from the broadcaster's ~/wrench) so
+    # ur_control's Arm reads it unchanged. --controller-ros-args remaps the controller node
+    # itself, not the short-lived spawner process.
+    fts = spawner("force_torque_sensor_broadcaster",
+                  "--controller-ros-args", "-r /force_torque_sensor_broadcaster/wrench:=/wrench")
 
     return LaunchDescription([
         gz_resource_path,
@@ -86,7 +99,7 @@ def generate_launch_description():
                               description="Run the Gazebo GUI (false = headless server)"),
         DeclareLaunchArgument("gripper", default_value="robotiq_2f85",
                               description="Gripper name published on /active_gripper for ur_control clients"),
-        robot_state_publisher, clock_bridge, active_gripper_pub, gz_sim, spawn_entity_delayed,
+        robot_state_publisher, clock_bridge, active_gripper_pub, ft_filter, gz_sim, spawn_entity_delayed,
         RegisterEventHandler(OnProcessExit(target_action=spawn_entity, on_exit=[jsb])),
-        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[jtc, gc])),
+        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[fts, jtc, gc])),
     ])
