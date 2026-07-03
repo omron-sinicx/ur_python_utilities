@@ -16,10 +16,10 @@ Branch: `jazzy`. Build: `colcon build --symlink-install` (two workspaces: `under
 | `ur_control_examples` | `ament_python` | ✅ Ported (keyboard teleop example) |
 | `ur_gripper_gz` | `ament_cmake` | ✅ New — gz-sim bringup (UR + Hand-E / 2F-85) + FT + Cartesian compliance |
 | `ur_gripper_gz_moveit_config` | `ament_cmake` | ✅ New — custom MoveIt 2 config (arm + gripper group), parameterized for Hand-E / 2F-85 |
-| `ur_gripper_description` | catkin | Removed; superseded for sim by `ur_gripper_gz` + apt `robotiq_description` |
-| `ur_gripper_gazebo` | catkin | Removed; replaced by `ur_gripper_gz` (gz Harmonic) |
-| `ur_gripper_85_moveit_config` | catkin | ⏸️ `COLCON_IGNORE` — MoveIt 1; regenerate with MSA 2 |
-| `ur_hande_moveit_config` | catkin | ⏸️ `COLCON_IGNORE` — MoveIt 1; regenerate with MSA 2 |
+| `ur_gripper_description` | catkin | ✅ Removed; superseded for sim by `ur_gripper_gz` + apt `robotiq_description` |
+| `ur_gripper_gazebo` | catkin | ✅ Removed; replaced by `ur_gripper_gz` (gz Harmonic) |
+| `ur_gripper_85_moveit_config` | catkin | ✅ removed; replaced by ur_gripper_gz_moveit_config |
+| `ur_hande_moveit_config` | catkin | ✅ removed; replaced by ur_gripper_gz_moveit_config |
 
 ---
 
@@ -110,6 +110,12 @@ gravity-compensated topic — see `ft_filter` below); the client publishes `~/ta
 **Verified in gz (headless), driven through `CompliantController`:** the controller activates,
 tracks target poses and target wrenches, stops on a target-force condition, and switches back to
 the JTC afterward.
+
+**Cartesian compliance (2F-85 bringup):** same wiring as Hand-E — `cartesian_compliance_controller`
++ `forward_velocity_controller` in `ur_gz_2f85_controllers.yaml`, inactive spawners in
+`ur_2f85_gz_control.launch.py` with `~/ft_sensor_wrench` → `/wrench/filtered`. The 2F-85 URDF
+adds a `gripper_tip_link` fixed frame (offset from `tool0`) so the controller/client TCP matches
+Hand-E. Not yet verified in gz.
 
 **FT filtering + zeroing (`ft_filter`).** The bringup runs `ur_control_examples/ft_filter -t wrench`,
 which Butterworth-filters `/wrench` → `/wrench/filtered` and offers `/wrench/filtered/zero_ftsensor`.
@@ -216,8 +222,8 @@ ros2 run ur_control_examples joint_position_keyboard
 - **Spike 2 — FT + Cartesian compliance in gz: DONE.** Both halves verified in gz (see above):
   `/wrench` live, and `cartesian_compliance_controller` driving force + motion through
   `CompliantController`, switching cleanly against the JTC.
-- **2F-85 Cartesian compliance:** the FT sensor is now on the 2F-85 bringup (done); the
-  `cartesian_compliance_controller` wiring (controllers.yaml + launch spawner) is still Hand-E only.
+- **2F-85 Cartesian compliance: DONE.,** wiring ported (controllers.yaml + launch spawners + URDF
+  `gripper_tip_link`);
 - **FT gravity compensation robustness:** the `ft_filter` zeroing tares the distal-mass bias only at
   the pose where you zero it — the bias is pose-dependent, so it reappears as the arm reconfigures.
   A model-based gravity-compensation node (constant tool mass/COM) would hold across the workspace.

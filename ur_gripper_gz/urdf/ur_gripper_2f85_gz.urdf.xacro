@@ -41,6 +41,16 @@
     <origin xyz="0 0 0" rpy="0 0 0"/>
   </xacro:robotiq_gripper>
 
+  <!-- TCP frame for compliance / ur_control clients (ee_link='gripper_tip_link').
+       Offset from tool0 through the ur_to_robotiq adapter + 2F-85 body to the open
+       fingertip center (~172 mm along tool Z). -->
+  <link name="$(arg tf_prefix)gripper_tip_link"/>
+  <joint name="$(arg tf_prefix)gripper_tip_joint" type="fixed">
+    <origin xyz="0 0 0.172" rpy="0 0 0"/>
+    <parent link="$(arg tf_prefix)tool0"/>
+    <child link="$(arg tf_prefix)gripper_tip_link"/>
+  </joint>
+
   <!-- single gz_ros2_control system: arm joints + the actuated gripper knuckle.
        The 5 gripper mimic joints are enforced by gz (bullet-featherstone) from their
        URDF <mimic> tags; they get state interfaces only (no command interface). -->

@@ -85,6 +85,14 @@ def generate_launch_description():
 
     jsb = spawner("joint_state_broadcaster")
     jtc = spawner("scaled_joint_trajectory_controller")
+    fvc = spawner("forward_velocity_controller", "--inactive")
+    # FZI Cartesian compliance controller: inactive at startup (conflicts with the JTC on
+    # the position interfaces), switched on by ur_control's CompliantController. Its FT input
+    # (~/ft_sensor_wrench) is remapped to /wrench/filtered (gravity-compensated).
+    compliance = spawner(
+        "cartesian_compliance_controller", "--inactive",
+        "--controller-ros-args",
+        "-r /cartesian_compliance_controller/ft_sensor_wrench:=/wrench/filtered")
     gc = spawner("gripper_controller")
     # Publish the wrist FT sensor on /wrench (remapped from the broadcaster's ~/wrench) so
     # ur_control's Arm reads it unchanged. --controller-ros-args remaps the controller node
@@ -101,5 +109,6 @@ def generate_launch_description():
                               description="Gripper name published on /active_gripper for ur_control clients"),
         robot_state_publisher, clock_bridge, active_gripper_pub, ft_filter, gz_sim, spawn_entity_delayed,
         RegisterEventHandler(OnProcessExit(target_action=spawn_entity, on_exit=[jsb])),
-        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[fts, jtc, gc])),
+        RegisterEventHandler(OnProcessExit(target_action=jsb, on_exit=[fts, jtc])),
+        RegisterEventHandler(OnProcessExit(target_action=jtc, on_exit=[fvc, compliance, gc])),
     ])
