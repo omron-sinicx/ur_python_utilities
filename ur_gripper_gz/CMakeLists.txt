@@ -3,19 +3,15 @@ project(ur_gripper_gz)
 
 find_package(ament_cmake REQUIRED)
 
-# Hand-E meshes from robotiq-cri (PickNik vendor stack has no Hand-E model).
-# REALPATH resolves '..' so ament_cmake_symlink_install gets an absolute path.
-get_filename_component(ROBOTIQ_CRI_MESHES
-  ${CMAKE_CURRENT_SOURCE_DIR}/../../robotiq-cri/robotiq_description/meshes
-  REALPATH)
-
+# Hand-E meshes vendored from robotiq-cri (PickNik vendor stack has no
+# Hand-E model); see meshes/README.md for provenance.
 install(DIRECTORY config launch urdf
   DESTINATION share/${PROJECT_NAME}
 )
-install(DIRECTORY ${ROBOTIQ_CRI_MESHES}/hande
+install(DIRECTORY meshes/hande
   DESTINATION share/${PROJECT_NAME}/meshes
 )
-install(FILES ${ROBOTIQ_CRI_MESHES}/robotiq_85_coupler.stl
+install(FILES meshes/robotiq_85_coupler.stl
   DESTINATION share/${PROJECT_NAME}/meshes
 )
 
