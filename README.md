@@ -25,6 +25,41 @@ Simulation is handled by `ur_gripper_gz` plus apt
 
 ## Installation
 
+Three ways to get a working workspace: **pixi**
+(recommended, no Docker/root required), **Docker**, or a manual colcon workspace.
+
+### With pixi (recommended)
+
+Installs ROS 2 Jazzy and all dependencies into a local, project-scoped
+[pixi](https://pixi.sh) environment via [RoboStack](https://robostack.github.io/) — no
+Docker, no `sudo` (besides the one-time `rosdep init`), no polluting your system Python/apt.
+
+Requires Linux with glibc ≥ 2.36 (e.g. Ubuntu 24.04 Noble) and
+[pixi](https://pixi.sh/latest/#installation) installed.
+
+```bash
+pixi install                  # creates .pixi/envs/default with ROS 2 Jazzy + build tools
+
+pixi run rosdep-init           # one-time per machine, requires sudo
+pixi run rosdep-update
+pixi run rosdep-install        # resolve workspace package.xml deps
+
+pixi run build                 # symlinks this repo's packages + cartesian_controllers
+                                # (dependencies.repos) into ws/src/, then colcon builds
+```
+
+`pixi run build` skips `cartesian_controller_simulation` / `cartesian_controller_tests`
+(they need a separate MuJoCo install, not needed for this repo's own packages).
+
+Then, in every new shell:
+
+```bash
+pixi shell
+ros2 launch ur_gripper_gz ur_2f85_gz_control.launch.py
+```
+
+See [`pixi.toml`](pixi.toml) for the full task list (`build-debug`, `test`, `clean`, …).
+
 ### With Docker
 
 ROS 2 Jazzy image with CUDA, MoveIt 2, gz Harmonic, and UR stack pre-installed:
@@ -44,7 +79,7 @@ The repo is bind-mounted at `/root/ws/src/ur_python_utilities`. Third-party sour
 Set `DOCKER_RUNTIME=runc` on machines without an NVIDIA GPU (Intel GL fallback is handled in the
 container entry script).
 
-### Compile from source
+### Compile from source manually
 
 In a colcon workspace:
 
