@@ -39,12 +39,9 @@ from ur_control.constants import BASE_LINK, CARTESIAN_COMPLIANCE_CONTROLLER, EE_
     get_arm_joint_names
 from ur_control.ur_services import URServices
 
-try:
-    from ur_ikfast import ur_kinematics as ur_ikfast
-except ImportError:
-    print("Import ur_ikfast not available, IKFAST would not be supported without it")
 from ur_pykdl import ur_kinematics
 from trac_ik_python.trac_ik import IK as TRACK_IK_SOLVER
+from ur_control.eaik_kinematics import EAIKKinematics
 
 cprint = utils.TextColors()
 
@@ -54,7 +51,7 @@ class Arm(object):
 
     def __init__(self,
                  namespace: str = None,
-                 ik_solver: IKSolverType = IKSolverType.TRAC_IK,
+                 ik_solver: IKSolverType = IKSolverType.EAIK,
                  gripper_type: GripperType = GripperType.GENERIC,
                  ft_topic: str = None,
                  base_link: str = None,
@@ -183,13 +180,15 @@ class Arm(object):
             raise ValueError("robot_description not found in the parameter server")
 
         # Instantiate Inverse kinematics solver
-        if self.ik_solver == IKSolverType.IKFAST:
-            # IKfast libraries
+        self.eaik = None
+        if self.ik_solver == IKSolverType.EAIK:
             try:
-                # TODO use the parameter robot_description
-                self.arm_ikfast = ur_ikfast.URKinematics(self._robot_urdf)
-            except Exception:
-                raise ValueError("IK solver set to IKFAST but no ikfast found for: %s. " % self._robot_urdf)
+                self.eaik = EAIKKinematics(self.kdl, logger=rospy.core.logging.getLogger(__name__),
+                                           robot_description=rospy.get_param('/robot_description'))
+            except (ImportError, ValueError) as exc:
+                self.node.get_logger().warn(
+                    "EAIK unavailable ({}); falling back to KDL IK solver".format(exc))
+                self.ik_solver = IKSolverType.KDL
         elif self.ik_solver == IKSolverType.TRAC_IK:
             try:
                 self.trac_ik = TRACK_IK_SOLVER(base_link=base_link, tip_link=ee_link, timeout=0.1, epsilon=1e-5, solve_type="Distance")
@@ -299,9 +298,8 @@ class Arm(object):
         """
         q_guess_ = seed if seed is not None else self.joint_angles()
 
-        if self.ik_solver == IKSolverType.IKFAST:
-            # TODO: transform pose to the default tip used by IKFast (tool0)
-            ik = self.arm_ikfast.inverse(pose, q_guess=q_guess_)
+        if self.ik_solver == IKSolverType.EAIK:
+            ik = self.eaik.inverse_kinematics(pose, seed=q_guess_)
         elif self.ik_solver == IKSolverType.TRAC_IK:
             ik = self.trac_ik.get_ik(q_guess_, *pose)
         elif self.ik_solver == IKSolverType.KDL:
