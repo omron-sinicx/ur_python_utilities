@@ -170,6 +170,7 @@ class CompliantController(Arm):
         try:
             target_wrench = WrenchStamped()
             target_wrench.header.frame_id = self.base_link
+            target_wrench.header.stamp = rospy.Time.now()
             target_wrench.wrench = conversions.to_wrench(wrench)
             self.cartesian_target_wrench_pub.publish(target_wrench)
         except Exception as e:
@@ -185,6 +186,9 @@ class CompliantController(Arm):
         # Publish the target pose
         try:
             target_pose = conversions.to_pose_stamped(self.base_link, pose)
+            # Stamp with the command instant so recorded bags carry the true
+            # action time (to_pose_stamped leaves the stamp at zero).
+            target_pose.header.stamp = rospy.Time.now()
             self.cartesian_target_pose_pub.publish(target_pose)
         except Exception as e:
             rospy.logerr("Fail to set_target_pose(): %s" % e)

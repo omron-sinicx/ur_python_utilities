@@ -77,8 +77,12 @@ class ur_kinematics(object):
     UR Kinematics with PyKDL
     """
 
-    def __init__(self, base_link=None, ee_link=None, robot=None, prefix=None, rospackage=None):
-        if robot:
+    def __init__(self, base_link=None, ee_link=None, robot=None, prefix=None, rospackage=None, urdf_string=None):
+        if urdf_string:
+            # Build from an explicit URDF string (e.g. a recorded
+            # /robot_description snapshot) - works without a ROS master.
+            self._ur = URDF.from_xml_string(urdf_string)
+        elif robot:
             rospack = rospkg.RosPack()
             rospackage_ = rospackage if rospackage is not None else 'ur_pykdl'
             pykdl_dir = rospack.get_path(rospackage_)
