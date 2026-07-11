@@ -186,7 +186,7 @@ class Arm(object):
                 self.eaik = EAIKKinematics(self.kdl, logger=rospy.core.logging.getLogger(__name__),
                                            robot_description=rospy.get_param('/robot_description'))
             except (ImportError, ValueError) as exc:
-                self.node.get_logger().warn(
+                rospy.logwarn(
                     "EAIK unavailable ({}); falling back to KDL IK solver".format(exc))
                 self.ik_solver = IKSolverType.KDL
         elif self.ik_solver == IKSolverType.TRAC_IK:
