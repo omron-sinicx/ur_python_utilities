@@ -39,49 +39,22 @@ def compute_quaternion_error(qd, qc, normalize_angle=False):
     Returns the axis error components for PID control.
 
     Args:
-        q_current (numpy.quaternion): Current orientation quaternion
-        q_desired (numpy.quaternion): Desired orientation quaternion
+        qd: Desired orientation quaternion
+        qc: Current orientation quaternion
 
     Returns:
         tuple: (ax, ay, az) axis error components in radians
     """
     q_current = to_np_quaternion(qc)
     q_desired = to_np_quaternion(qd)
-    # Ensure inputs are normalized quaternions
     q_current = q_current / np.abs(q_current)
     q_desired = q_desired / np.abs(q_desired)
 
-    # Compute error quaternion
-    q_error = q_current.conjugate() * q_desired
-
-    # Extract vector and scalar parts
-    qv = np.array([q_error.x, q_error.y, q_error.z])
-    qw = q_error.w
-
-    # Compute the rotation angle
-    angle = 2 * np.arctan2(np.linalg.norm(qv), qw)
-
-    # Handle the case when the quaternions are very close
-    if np.linalg.norm(qv) < 1e-10:
-        return 0.0, 0.0, 0.0
-
-    # Normalize the axis
-    axis = qv / np.linalg.norm(qv)
-
+    q_error = to_np_array(q_current.conjugate() * q_desired)
+    aa = axis_angle_from_quaternion(q_error)
     if normalize_angle:
-        # Normalize angle to [-1, 1] range
-        # This uses the fact that maximum possible rotation is π radians (180 degrees)
-        normalized_angle = angle / np.pi
-        ax = axis[0] * normalized_angle
-        ay = axis[1] * normalized_angle
-        az = axis[2] * normalized_angle
-    else:
-        # Return raw angle in radians if normalization is not desired
-        ax = axis[0] * angle
-        ay = axis[1] * angle
-        az = axis[2] * angle
-
-    return ax, ay, az
+        aa = aa / np.pi
+    return float(aa[0]), float(aa[1]), float(aa[2])
 
 
 def orientation_error_as_rotation_vector(quat_target, quat_source):
@@ -97,7 +70,8 @@ def orientation_error_as_rotation_vector(quat_target, quat_source):
     """
     qt = to_np_quaternion(quat_target)
     qs = to_np_quaternion(quat_source)
-    return quaternion.as_rotation_vector(qt*qs.conjugate())
+    q_rel = to_np_array(qt * qs.conjugate())
+    return axis_angle_from_quaternion(q_rel)
 
 
 # def quaternions_orientation_error(quat_target, quat_source):
@@ -259,6 +233,23 @@ def random_rotation_matrix(rand=None):
 # Conversion
 
 
+def _canonicalize_quaternion(quat: np.ndarray) -> np.ndarray:
+    """Return equivalent quaternion with non-negative scalar part (w >= 0)."""
+    quat = np.asarray(quat, dtype=np.float64).reshape(4)
+    if quat[3] < 0:
+        quat = -quat
+    return quat
+
+
+def _canonicalize_rotation_vector(axis_angle: np.ndarray) -> np.ndarray:
+    """Map axis-angle to the shortest rotation (|aa| <= pi)."""
+    aa = np.asarray(axis_angle, dtype=np.float64).reshape(3)
+    angle = np.linalg.norm(aa)
+    if angle > np.pi:
+        aa = aa * (1.0 - 2.0 * np.pi / angle)
+    return aa
+
+
 def rotation_matrix_from_quaternion(q):
     """
     Convert a quaternion to a 4x4 rotation matrix.
@@ -285,7 +276,7 @@ def quaternion_from_matrix(matrix):
         numpy.ndarray: A 4-element numpy array representing the quaternion.
     """
     q = quaternion.from_rotation_matrix(matrix[:3, :3])
-    return to_np_array(q)
+    return _canonicalize_quaternion(to_np_array(q))
 
 
 def quaternion_from_axis_angle(axis_angle):
@@ -298,8 +289,9 @@ def quaternion_from_axis_angle(axis_angle):
     Returns:
         np.ndarray: The corresponding quaternion.
     """
+    axis_angle = _canonicalize_rotation_vector(axis_angle)
     np_q = quaternion.from_rotation_vector(axis_angle)
-    return to_np_array(np_q)
+    return _canonicalize_quaternion(to_np_array(np_q))
 
 
 def quaternion_from_ortho6(ortho6):
@@ -326,7 +318,24 @@ def axis_angle_from_quaternion(quat):
     Returns:
         np.ndarray: The corresponding axis-angle representation.
     """
-    return quaternion.as_rotation_vector(to_np_quaternion(quat))
+    quat = _canonicalize_quaternion(quat)
+    aa = quaternion.as_rotation_vector(to_np_quaternion(quat))
+    return _canonicalize_rotation_vector(aa)
+
+
+def matrix_to_axis_angle(R: np.ndarray) -> np.ndarray:
+    """Convert a rotation matrix to a canonical axis-angle representation."""
+    return axis_angle_from_quaternion(quaternion_from_matrix(R))
+
+
+def relative_axis_angle(q_target: np.ndarray, q_source: np.ndarray) -> np.ndarray:
+    """Rotation vector of q_target relative to q_source (shortest arc)."""
+    q_target = np.asarray(q_target, dtype=np.float64).reshape(4)
+    q_source = np.asarray(q_source, dtype=np.float64).reshape(4)
+    if np.dot(q_target, q_source) < 0.0:
+        q_target = -q_target
+    q_rel = quaternion_multiply(q_target, quaternion_conjugate(q_source))
+    return axis_angle_from_quaternion(q_rel)
 
 
 def ortho6_from_axis_angle(axis_angle):
