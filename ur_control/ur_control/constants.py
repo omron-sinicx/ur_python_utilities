@@ -4,6 +4,7 @@ from enum import Enum
 class IKSolverType(Enum):
     KDL = 'kdl'
     EAIK = 'eaik'
+    PINOCCHIO = 'pinocchio'
 
 
 class GripperType(Enum):

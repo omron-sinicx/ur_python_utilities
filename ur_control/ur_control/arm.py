@@ -39,6 +39,7 @@ from ur_control.constants import BASE_LINK, CARTESIAN_COMPLIANCE_CONTROLLER, EE_
     get_arm_joint_names
 from ur_control.ur_services import URServices
 from ur_control.eaik_kinematics import EAIKKinematics
+from ur_control.pinocchio_kinematics import PinocchioKinematics
 
 from ur_pykdl import ur_kinematics, get_robot_description
 
@@ -52,7 +53,7 @@ class Arm(object):
     def __init__(self,
                  node,
                  namespace: str = None,
-                 ik_solver: IKSolverType = IKSolverType.EAIK,
+                 ik_solver: IKSolverType = IKSolverType.PINOCCHIO,
                  gripper_type: GripperType = GripperType.GENERIC,
                  ft_topic: str = None,
                  base_link: str = None,
@@ -207,7 +208,16 @@ class Arm(object):
 
         # Instantiate inverse kinematics solver (KDL FK is always available above).
         self.eaik = None
-        if self.ik_solver == IKSolverType.EAIK:
+        self.pinocchio = None
+        if self.ik_solver == IKSolverType.PINOCCHIO:
+            try:
+                self.pinocchio = PinocchioKinematics(self.kdl, logger=self.node.get_logger(),
+                                                     robot_description=robot_description)
+            except (ImportError, ValueError) as exc:
+                self.node.get_logger().warn(
+                    "Pinocchio unavailable ({}); falling back to KDL IK solver".format(exc))
+                self.ik_solver = IKSolverType.KDL
+        elif self.ik_solver == IKSolverType.EAIK:
             try:
                 self.eaik = EAIKKinematics(self.kdl, logger=self.node.get_logger(),
                                            robot_description=robot_description)
@@ -322,7 +332,8 @@ class Arm(object):
             if given, attempt to return a joint configuration closer to the seed
         attempts : int, optional
             number of attempts to find an IK solution. Retries only help the
-            numerical KDL solver; analytical EAIK returns the same result.
+            numerical KDL solver; analytical EAIK returns the same result and
+            Pinocchio already restarts internally from perturbed seeds.
         verbose : bool, optional
             print a warning message when IK solutions are not found
 
@@ -338,7 +349,9 @@ class Arm(object):
         """
         q_guess_ = seed if seed is not None else self.joint_angles()
 
-        if self.ik_solver == IKSolverType.EAIK:
+        if self.ik_solver == IKSolverType.PINOCCHIO:
+            ik = self.pinocchio.inverse_kinematics(pose, seed=q_guess_)
+        elif self.ik_solver == IKSolverType.EAIK:
             ik = self.eaik.inverse_kinematics(pose, seed=q_guess_)
         elif self.ik_solver == IKSolverType.KDL:
             ik = self.kdl.inverse_kinematics(pose[:3], pose[3:], seed=q_guess_)

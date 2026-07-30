@@ -160,7 +160,7 @@ Highlights:
 - Arm trajectory / velocity control via ros2_control (`scaled_joint_trajectory_controller`,
   `forward_velocity_controller`)
 - Generic and Robotiq gripper drivers (`GripperCommand` and `FollowJointTrajectory` paths)
-- FK / IK (KDL + EAIK analytical IK)
+- FK / IK — Pinocchio damped least squares (default), EAIK analytical IK, KDL Newton-Raphson
 - FZI `cartesian_compliance_controller` wrapper (`CompliantController`) with runtime parameter tuning
   via `SetParameters`
 - Gripper config registry + `/active_gripper` auto-detection
@@ -197,8 +197,19 @@ in gz is limited by the finger model; 2F-85 open/close works end-to-end.
    launches pass `--physics-engine gz-physics-bullet-featherstone-plugin`.
 3. **`gz_ros2_control` ignores URDF command limits.** Cap gripper travel in the URDF and/or via
    client `gripper_finger_max_position` to avoid over-close jamming.
-4. **TRAC-IK Python is unavailable on Jazzy.** `IKSolverType.TRAC_IK`; using EAIK
-   for analytical IK instead.
+4. **IK solver choice (`IKSolverType`).** `PINOCCHIO` is the default: Levenberg-Marquardt
+   damped least squares with adaptive damping, joint-limit clamping and 2*pi branch
+   selection toward the seed. It is the only option that behaves at singularities *and*
+   on calibrated URDFs:
+   - `KDL` (`ChainIkSolverPos_NR`) ignores joint limits and can return solutions many
+     turns away from the seed (measured: up to 295 rad on a nominal UR5e, 1602 rad on a
+     calibrated one), plus ~3% outright failures on random reachable poses.
+   - `EAIK` is exact and ~5x faster, but only for *ideal* kinematics: a calibrated
+     `kinematics_params` file (0.1-0.3 deg axis deviations) yields
+     `6R-Unknown Kinematic Class` and no decomposition. It also returns least-squares
+     solutions at singularities without flagging them (measured: up to 6.4 mm off).
+   `trac_ik_lib` is packaged for Jazzy (`ros-jazzy-trac-ik`), but only as C++ — there is
+   no `trac_ik_python` binding, hence no `IKSolverType.TRAC_IK`.
 5. **Controller renames (ROS 1 → 2):** `scaled_pos_joint_traj_controller` →
    `scaled_joint_trajectory_controller`; `joint_group_vel_controller` → `forward_velocity_controller`.
 
