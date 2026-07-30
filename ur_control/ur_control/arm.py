@@ -255,16 +255,16 @@ class Arm(object):
 
         # use_gazebo_sim is a node parameter (ROS 2 has no global param server).
         self.use_gazebo_sim = bool(utils.read_parameter(self.node, "use_gazebo_sim", False))
-        if not self.use_gazebo_sim:
-            zero_ft_client = self.node.create_client(Trigger, self.ns + 'ur_hardware_interface/zero_ftsensor')
-            # Guard the blocking call: without the UR driver (e.g. gz sim mistakenly run with
-            # use_gazebo_sim=false) this service never exists and client.call() hangs forever.
-            if zero_ft_client.wait_for_service(timeout_sec=2.0):
-                self._zero_ft = lambda: zero_ft_client.call(Trigger.Request())
-            else:
-                self.node.get_logger().warn('%s unavailable; skipping hardware FT zeroing' % zero_ft_client.srv_name)
-                self._zero_ft = lambda: None
+
+        # Hardware FT zeroing lives on the io_and_status_controller (ur_controllers/
+        # GPIOController), which replaced ROS 1's ur_hardware_interface. Probe for it rather
+        # than deciding from use_gazebo_sim: the service exists only with the real driver, and
+        # client.call() would hang forever on a service that never appears.
+        zero_ft_client = self.node.create_client(Trigger, self.ns + 'io_and_status_controller/zero_ftsensor')
+        if zero_ft_client.wait_for_service(timeout_sec=2.0):
+            self._zero_ft = lambda: zero_ft_client.call(Trigger.Request(), timeout_sec=5.0)
         else:
+            self.node.get_logger().warn('%s unavailable; skipping hardware FT zeroing' % zero_ft_client.srv_name)
             self._zero_ft = lambda: None
 
     def __ft_callback__(self, msg):
@@ -769,11 +769,10 @@ class Arm(object):
         """
         Reset force-torque sensor readings to zeros.
         """
-        if not self.use_gazebo_sim:
-            # First try to zero FT from ur_driver
-            self._zero_ft()
-            time.sleep(sleep_time)
-        # Then update filtered one
+        # Zero the sensor in the driver (a no-op when that service was not found), then the
+        # filtered republish.
+        self._zero_ft()
+        time.sleep(sleep_time)
         self._zero_ft_filtered()
         time.sleep(sleep_time)
 

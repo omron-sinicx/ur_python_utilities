@@ -32,10 +32,14 @@ class URServices():
     synchronous ``client.call`` calls below rely on the executor processing responses.
     """
 
+    #: Seconds to wait for the dashboard client when probing for a real robot.
+    SERVICE_DISCOVERY_TIMEOUT = 2.0
+    #: Seconds to wait for any service response. rclpy's ``call()`` waits forever when
+    #: given no timeout, which turns a missing server into a hung process.
+    SERVICE_CALL_TIMEOUT = 5.0
+
     def __init__(self, node, namespace):
         self.node = node
-
-        self.use_real_robot = read_parameter(node, "use_real_robot", False)
 
         self.ns = solve_namespace(namespace, node=node)
 
@@ -43,36 +47,65 @@ class URServices():
         self.robot_safety_mode = None
         self.robot_status = dict()
 
+        # Dashboard services live on ur_robot_driver's dashboard_client node, which
+        # ur_control.launch.py starts only for a real robot (it is conditioned on NOT
+        # use_mock_hardware), never in simulation.
         self.ur_dashboard_clients = {
-            "get_loaded_program":     node.create_client(ur_dashboard_msgs.srv.GetLoadedProgram, self.ns + 'ur_hardware_interface/dashboard/get_loaded_program'),
-            "program_running":        node.create_client(ur_dashboard_msgs.srv.IsProgramRunning, self.ns + 'ur_hardware_interface/dashboard/program_running'),
-            "load_program":           node.create_client(ur_dashboard_msgs.srv.Load, self.ns + 'ur_hardware_interface/dashboard/load_program'),
-            "play":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/play'),
-            "stop":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/stop'),
-            "quit":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/quit'),
-            "connect":                node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/connect'),
-            "close_popup":            node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/close_popup'),
-            "unlock_protective_stop": node.create_client(std_srvs.srv.Trigger, self.ns + 'ur_hardware_interface/dashboard/unlock_protective_stop'),
-            "is_in_remote_control":   node.create_client(ur_dashboard_msgs.srv.IsInRemoteControl, self.ns + 'ur_hardware_interface/dashboard/is_in_remote_control'),
-            "get_program_state":      node.create_client(ur_dashboard_msgs.srv.GetProgramState, self.ns + 'ur_hardware_interface/dashboard/program_state'),
+            "get_loaded_program":     node.create_client(ur_dashboard_msgs.srv.GetLoadedProgram, self.ns + 'dashboard_client/get_loaded_program'),
+            "program_running":        node.create_client(ur_dashboard_msgs.srv.IsProgramRunning, self.ns + 'dashboard_client/program_running'),
+            "load_program":           node.create_client(ur_dashboard_msgs.srv.Load, self.ns + 'dashboard_client/load_program'),
+            "play":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/play'),
+            "stop":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/stop'),
+            "quit":                   node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/quit'),
+            "connect":                node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/connect'),
+            "close_popup":            node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/close_popup'),
+            "unlock_protective_stop": node.create_client(std_srvs.srv.Trigger, self.ns + 'dashboard_client/unlock_protective_stop'),
+            "is_in_remote_control":   node.create_client(ur_dashboard_msgs.srv.IsInRemoteControl, self.ns + 'dashboard_client/is_in_remote_control'),
+            "get_program_state":      node.create_client(ur_dashboard_msgs.srv.GetProgramState, self.ns + 'dashboard_client/program_state'),
         }
 
-        self.set_payload_srv = node.create_client(ur_msgs.srv.SetPayload, self.ns + 'ur_hardware_interface/set_payload')
-        self.speed_slider = node.create_client(ur_msgs.srv.SetSpeedSliderFraction, self.ns + 'ur_hardware_interface/set_speed_slider')
+        # Everything else the driver exposes to us is on the io_and_status_controller
+        # (ur_controllers/GPIOController), which replaced ROS 1's ur_hardware_interface.
+        self.set_payload_srv = node.create_client(ur_msgs.srv.SetPayload, self.ns + 'io_and_status_controller/set_payload')
+        self.speed_slider = node.create_client(ur_msgs.srv.SetSpeedSliderFraction, self.ns + 'io_and_status_controller/set_speed_slider')
 
-        self.set_io = node.create_client(ur_msgs.srv.SetIO, self.ns + 'ur_hardware_interface/set_io')
+        self.set_io = node.create_client(ur_msgs.srv.SetIO, self.ns + 'io_and_status_controller/set_io')
 
-        self.sub_status_ = node.create_subscription(Bool, self.ns + 'ur_hardware_interface/robot_program_running', self.ros_control_status_callback, 10)
+        self.sub_status_ = node.create_subscription(Bool, self.ns + 'io_and_status_controller/robot_program_running', self.ros_control_status_callback, 10)
         self.service_proxy_list = node.create_client(controller_manager_msgs.srv.ListControllers, self.ns + 'controller_manager/list_controllers')
         self.service_proxy_switch = node.create_client(controller_manager_msgs.srv.SwitchController, self.ns + 'controller_manager/switch_controller')
 
-        self.sub_robot_safety_mode = node.create_subscription(ur_dashboard_msgs.msg.SafetyMode, self.ns + 'ur_hardware_interface/safety_mode', self.safety_mode_callback, 10)
+        self.sub_robot_safety_mode = node.create_subscription(ur_dashboard_msgs.msg.SafetyMode, self.ns + 'io_and_status_controller/safety_mode', self.safety_mode_callback, 10)
 
-    def _call(self, client, request=None):
-        """Synchronous service call; builds an empty request of the client's type if none given."""
+        # Whether we are driving real hardware. Probed from the dashboard client rather
+        # than configured: ROS 2 has no global parameter server, so a launch file cannot
+        # set this for a separately started script, and a config value that disagrees with
+        # reality fails silently in both directions -- False on hardware turns every method
+        # below into a no-op that reports success, while True in simulation used to block
+        # forever on the first dashboard call. Set the use_real_robot parameter to override.
+        self.use_real_robot = read_parameter(node, "use_real_robot", None)
+        if self.use_real_robot is None:
+            self.use_real_robot = self.ur_dashboard_clients["get_loaded_program"].wait_for_service(
+                timeout_sec=self.SERVICE_DISCOVERY_TIMEOUT)
+            node.get_logger().info(
+                "use_real_robot not set; probed the dashboard client and found %s"
+                % ("a real robot" if self.use_real_robot else "no real robot (simulation)"))
+
+    def _call(self, client, request=None, timeout_sec=None):
+        """
+        Synchronous service call; builds an empty request of the client's type if none given.
+
+        Raises TimeoutError rather than returning None when the server does not answer, so
+        a missing service surfaces as a clear error instead of an AttributeError on the
+        response further down.
+        """
         if request is None:
             request = client.srv_type.Request()
-        return client.call(request)
+        timeout_sec = self.SERVICE_CALL_TIMEOUT if timeout_sec is None else timeout_sec
+        response = client.call(request, timeout_sec=timeout_sec)
+        if response is None:
+            raise TimeoutError("No response from %s within %.1fs" % (client.srv_name, timeout_sec))
+        return response
 
     @check_for_real_robot
     def safety_mode_callback(self, msg):
@@ -98,16 +131,13 @@ class URServices():
 
     @check_for_real_robot
     def unlock_protective_stop(self):
-        if not self.use_real_robot:
-            return True
-
         service_client = self.ur_dashboard_clients["unlock_protective_stop"]
         request = std_srvs.srv.Trigger.Request()
         start_time = time.time()
         self.node.get_logger().info("Attempting to unlock protective stop of " + self.ns)
         response = None
         while rclpy.ok():
-            response = service_client.call(request)
+            response = self._call(service_client, request)
             if time.time() - start_time > 20.0:
                 self.node.get_logger().error("Timeout of 20s exceeded in unlock protective stop")
                 break
@@ -122,7 +152,8 @@ class URServices():
     @check_for_real_robot
     def set_speed_scale(self, scale):
         try:
-            self.speed_slider.call(ur_msgs.srv.SetSpeedSliderFraction.Request(speed_slider_fraction=float(scale)))
+            self._call(self.speed_slider,
+                       ur_msgs.srv.SetSpeedSliderFraction.Request(speed_slider_fraction=float(scale)))
         except Exception:
             self.node.get_logger().error("Failed to communicate with Dashboard when setting speed slider")
             return False
@@ -138,7 +169,7 @@ class URServices():
             payload = ur_msgs.srv.SetPayload.Request()
             payload.mass = float(mass)
             payload.center_of_gravity = conversions.to_vector3(center_of_gravity)
-            self.set_payload_srv.call(payload)
+            self._call(self.set_payload_srv, payload)
             return True
         except Exception as e:
             self.node.get_logger().error("Exception trying to set payload: %s" % e)
@@ -204,9 +235,6 @@ class URServices():
 
     @check_for_real_robot
     def activate_ros_control_on_ur(self, recursion_depth=0):
-        if not self.use_real_robot:
-            return True
-
         # Check if URCap is already running on UR
         if self.wait_for_control_status_to_turn_on(1.0):
             self.node.get_logger().debug("Robot program is running")
@@ -263,7 +291,7 @@ class URServices():
                 self.node.get_logger().info("Loading ROS control on robot " + self.ns)
                 request = ur_dashboard_msgs.srv.Load.Request()
                 request.filename = "ROS_external_control.urp"
-                response = self.ur_dashboard_clients["load_program"].call(request)
+                response = self._call(self.ur_dashboard_clients["load_program"], request)
                 if response.success:  # Try reconnecting to dashboard
                     return True
                 else:
@@ -282,7 +310,7 @@ class URServices():
         list_req = controller_manager_msgs.srv.ListControllers.Request()
         switch_req = controller_manager_msgs.srv.SwitchController.Request()
         self.node.get_logger().info("Checking for dead controllers for robot " + self.ns)
-        list_res = self.service_proxy_list.call(list_req)
+        list_res = self._call(self.service_proxy_list, list_req)
         for c in list_res.controller:
             if c.name == "scaled_joint_trajectory_controller":
                 if c.state == "inactive":
@@ -290,7 +318,7 @@ class URServices():
                     self.node.get_logger().warn("Force restart of controller")
                     switch_req.activate_controllers = ['scaled_joint_trajectory_controller']
                     switch_req.strictness = 1
-                    switch_res = self.service_proxy_switch.call(switch_req)
+                    switch_res = self._call(self.service_proxy_switch, switch_req)
                     time.sleep(1)
                     return switch_res.ok
                 else:
@@ -307,9 +335,6 @@ class URServices():
 
     @check_for_real_robot
     def load_program(self, program_name="", recursion_depth=0):
-        if not self.use_real_robot:
-            return True
-
         if recursion_depth > 10:
             self.node.get_logger().error("Tried too often. Breaking out.")
             self.node.get_logger().error("Could not load " + program_name + ". Is the UR in Remote Control mode and program installed with correct name?")
@@ -329,7 +354,7 @@ class URServices():
                 self.node.get_logger().info("Loaded program is different %s. Attempting to load new program %s" % (response.program_name, program_name))
                 request = ur_dashboard_msgs.srv.Load.Request()
                 request.filename = program_name
-                response = self.ur_dashboard_clients["load_program"].call(request)
+                response = self._call(self.ur_dashboard_clients["load_program"], request)
                 if response.success:  # Try reconnecting to dashboard
                     load_success = True
                     return True
