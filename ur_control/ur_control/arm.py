@@ -33,8 +33,9 @@ from rclpy.qos import qos_profile_sensor_data
 from ur_control import utils, spalg, conversions, transformations
 from ur_control.exceptions import InverseKinematicsException
 from ur_control.controllers_connection import ControllersConnection
-from ur_control.controllers import JointTrajectoryController, JointVelocityController
+from ur_control.controllers import JointTrajectoryController, JointVelocityController, JointEffortController
 from ur_control.constants import BASE_LINK, CARTESIAN_COMPLIANCE_CONTROLLER, EE_LINK,  FT_SUBSCRIBER, JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, VELOCITY_CONTROLLER_NAME,  \
+    EFFORT_CONTROLLER_NAME, FRICTION_MODEL_CONTROLLER_NAME, \
     ExecutionResult, IKSolverType, GripperType, \
     get_arm_joint_names
 from ur_control.ur_services import URServices
@@ -141,6 +142,10 @@ class Arm(object):
 
     def __on_shutdown__(self):
         try:
+            if self.running_controller_name == EFFORT_CONTROLLER_NAME:
+                if self.joint_effort_controller is not None:
+                    self.joint_effort_controller.stop_all_joints()
+                self.activate_joint_trajectory_controller()
             if self.use_velocity_interface:
                 # self.joint_vel_controller.stop_all_joints()
                 self.activate_joint_trajectory_controller()
@@ -150,11 +155,13 @@ class Arm(object):
 
     def __init_controllers__(self, gripper_type, joint_names_prefix=None, robot_version="UR5e"):
         self.joint_names = None if joint_names_prefix is None else get_arm_joint_names(joint_names_prefix)
+        self.robot_version = robot_version
 
         self.running_controller_name = None
         if not self.skip_ros_control:
             if self.dashboard_services.activate_ros_control_on_ur():
-                in_conflict_controllers = [JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER]
+                in_conflict_controllers = [JOINT_POSITION_TRAJECTORY_CONTROLLER, JOINT_VELOCITY_TRAJECTORY_CONTROLLER, CARTESIAN_COMPLIANCE_CONTROLLER,
+                                           VELOCITY_CONTROLLER_NAME, EFFORT_CONTROLLER_NAME]
                 for controller in in_conflict_controllers:
                     # get_controller_state raises if the controller is not loaded; treat that as "not active".
                     try:
@@ -179,6 +186,9 @@ class Arm(object):
                                                                 joint_names=self.joint_names,
                                                                 robot_version=robot_version,
                                                                 timeout=1.0)
+
+        # Created on demand by activate_joint_effort_controller()
+        self.joint_effort_controller = None
 
         self.gripper = None
 
@@ -293,6 +303,29 @@ class Arm(object):
         if self.controller_manager.switch_controllers(controllers_on=[VELOCITY_CONTROLLER_NAME],
                                                       controllers_off=[self.running_controller_name]):
             self.running_controller_name = VELOCITY_CONTROLLER_NAME
+            return True
+        return False
+
+    def activate_joint_effort_controller(self):
+        """
+        Activate the joint effort (direct torque) controller.
+        Requires UR driver >= 3.5.0 and PolyScope >= 5.23.0 / 10.11.0.
+
+        Returns:
+            bool: True if the controller was activated successfully, False otherwise
+        """
+        if self.joint_effort_controller is None:
+            self.joint_effort_controller = JointEffortController(self.node,
+                                                                 controller_name=EFFORT_CONTROLLER_NAME,
+                                                                 namespace=self.ns,
+                                                                 joint_names=self.joint_names,
+                                                                 robot_version=self.robot_version,
+                                                                 timeout=1.0)
+        if self.running_controller_name == EFFORT_CONTROLLER_NAME:
+            return True
+        if self.controller_manager.switch_controllers(controllers_on=[EFFORT_CONTROLLER_NAME],
+                                                      controllers_off=[self.running_controller_name]):
+            self.running_controller_name = EFFORT_CONTROLLER_NAME
             return True
         return False
 
@@ -600,6 +633,68 @@ class Arm(object):
         self.activate_joint_velocity_controller()
         self.joint_vel_controller.set_joint_velocities(velocities)
 
+    def set_joint_efforts(self,
+                          efforts: np.ndarray):
+        """
+        Set the joint torques (Nm) directly, switching to the effort controller if needed.
+
+        The robot adds its own gravity and friction compensation to the commanded torques,
+        so zeros let the arm float. Commands must be streamed continuously (ideally at 500 Hz);
+        zero torques are sent if no command arrives within the controller's command_timeout.
+        Call stop_robot() to return to position control.
+
+        Note: for torque feedback through joint_efforts(), launch the UR driver with
+        use_currents_as_efforts:=false; otherwise joint_states reports motor currents.
+        """
+        if not self.activate_joint_effort_controller():
+            raise RuntimeError("Failed to activate %s" % EFFORT_CONTROLLER_NAME)
+        self.joint_effort_controller.set_joint_efforts(efforts)
+
+    def set_friction_compensation(self,
+                                  viscous_scale: np.ndarray,
+                                  coulomb_scale: np.ndarray,
+                                  timeout: float = 2.0) -> bool:
+        """
+        Scale the friction compensation the robot applies during direct torque control.
+        Requires UR driver >= 3.8.0 and PolyScope >= 5.25.1 / 10.12.1.
+
+        Parameters
+        ----------
+        viscous_scale : numpy.ndarray
+            per-joint viscous friction scale in [0, 1]. 0 = no compensation, 1 = full.
+            Robot default: [0.9, 0.9, 0.8, 0.9, 0.9, 0.9]
+        coulomb_scale : numpy.ndarray
+            per-joint Coulomb friction scale in [0, 1]. 0 = no compensation, 1 = full.
+            Robot default: [0.8, 0.8, 0.7, 0.8, 0.8, 0.8]
+        timeout : float, optional
+            time to wait for the friction_model_controller service
+
+        Returns
+        -------
+        res : bool
+            True if the robot accepted the new parameters.
+        """
+        # Only available in recent ur_msgs; import lazily so older installs still load Arm.
+        from ur_msgs.msg import FrictionModelParameters
+        from ur_msgs.srv import SetFrictionModelParameters
+
+        for name, scale in (("viscous_scale", viscous_scale), ("coulomb_scale", coulomb_scale)):
+            if len(scale) != 6 or np.any(np.asarray(scale) < 0.0) or np.any(np.asarray(scale) > 1.0):
+                raise ValueError("%s must have 6 values in [0, 1]: %s" % (name, scale))
+
+        client = self.node.create_client(SetFrictionModelParameters,
+                                         self.ns + FRICTION_MODEL_CONTROLLER_NAME + '/set_friction_model_parameters')
+        try:
+            if not client.wait_for_service(timeout_sec=timeout):
+                self.node.get_logger().error('%s unavailable; is %s active?' % (client.srv_name, FRICTION_MODEL_CONTROLLER_NAME))
+                return False
+            request = SetFrictionModelParameters.Request(
+                parameters=FrictionModelParameters(viscous_scale=[float(v) for v in viscous_scale],
+                                                   coulomb_scale=[float(c) for c in coulomb_scale]))
+            return bool(client.call(request).success)
+        finally:
+            self.node.destroy_client(client)
+
     def set_joint_trajectory(self,
                              target_time: float,
                              trajectory: np.ndarray,
@@ -770,7 +865,12 @@ class Arm(object):
                 prev_state = curr_state.copy()
 
     def stop_robot(self):
-        if self.use_velocity_interface:
+        if self.running_controller_name == EFFORT_CONTROLLER_NAME:
+            # Drop the user torques, then hold the current position with the trajectory controller.
+            if self.joint_effort_controller is not None:
+                self.joint_effort_controller.stop_all_joints()
+            self.set_joint_positions(positions=self.joint_angles(), target_time=0.1, wait=True)
+        elif self.use_velocity_interface:
             self.set_joint_velocities(velocities=[0.0, 0.0, 0.0, 0.0, 0.0, 0.0])
             self.wait_for_robot_to_stop()
         else:

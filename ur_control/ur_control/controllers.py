@@ -5,6 +5,7 @@ import copy
 import collections
 import time
 import math
+import threading
 
 import rclpy
 from rclpy.action import ActionClient
@@ -84,6 +85,93 @@ class JointControllerBase(object):
 
         self._num_joints = len(self._joint_names)
         self.node.get_logger().debug('Topic [%sjoint_states] found' % self.ns)
+
+    def _load_joint_limits(self, robot_version=None):
+        """Load joint limits from YAML file."""
+        # Try to find the default UR5e joint limits file
+        try:
+            ur_desc_path = get_package_share_directory('ur_description')
+            joint_limits_file = os.path.join(ur_desc_path, 'config', robot_version, 'joint_limits.yaml')
+        except Exception as e:
+            self.node.get_logger().warn(f"Could not find ur_description package: {e}")
+            return self._get_default_limits()
+
+        try:
+            with open(joint_limits_file, 'r') as f:
+                limits_data = yaml.safe_load(f)
+
+            joint_limits = {}
+            for joint_name in self._joint_names:
+                # Remove '_joint' suffix to match YAML keys
+                yaml_key = joint_name.replace('_joint', '').replace('_', '_')
+                if yaml_key == 'shoulder_pan':
+                    yaml_key = 'shoulder_pan'
+                elif yaml_key == 'shoulder_lift':
+                    yaml_key = 'shoulder_lift'
+                elif yaml_key == 'elbow':
+                    yaml_key = 'elbow_joint'
+                elif yaml_key.startswith('wrist'):
+                    yaml_key = yaml_key.replace('_', '_')
+
+                if yaml_key in limits_data['joint_limits']:
+                    limits = limits_data['joint_limits'][yaml_key]
+                    joint_limits[joint_name] = {
+                        'min_position': limits.get('min_position', math.radians(-360.0)),
+                        'max_position': limits.get('max_position', math.radians(360.0)),
+                        'max_velocity': limits.get('max_velocity', math.radians(180.0)),
+                        'max_effort': limits.get('max_effort', 150.0)
+                    }
+                else:
+                    self.node.get_logger().warn(f"Joint {joint_name} not found in limits file, using defaults")
+                    joint_limits[joint_name] = self._get_default_limits()[joint_name]
+
+            self.node.get_logger().info("Successfully loaded joint limits from YAML file")
+            return joint_limits
+
+        except Exception as e:
+            self.node.get_logger().warn(f"Failed to load joint limits from {joint_limits_file}: {e}")
+            return self._get_default_limits()
+
+    def _get_default_limits(self):
+        """Get default joint limits if YAML file is not available."""
+        return {
+            'shoulder_pan_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'shoulder_lift_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'elbow_joint': {
+                'min_position': np.radians(-180.0),
+                'max_position': np.radians(180.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 150.0
+            },
+            'wrist_1_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            },
+            'wrist_2_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            },
+            'wrist_3_joint': {
+                'min_position': np.radians(-360.0),
+                'max_position': np.radians(360.0),
+                'max_velocity': np.radians(180.0),
+                'max_effort': 28.0
+            }
+        }
 
     def disconnect(self):
         """
@@ -235,93 +323,6 @@ class JointVelocityController(JointControllerBase):
 
         self.node.get_logger().info('JointVelocityController initialized. ns: {0}'.format(namespace))
 
-    def _load_joint_limits(self, robot_version=None):
-        """Load joint limits from YAML file."""
-        # Try to find the default UR5e joint limits file
-        try:
-            ur_desc_path = get_package_share_directory('ur_description')
-            joint_limits_file = os.path.join(ur_desc_path, 'config', robot_version, 'joint_limits.yaml')
-        except Exception as e:
-            self.node.get_logger().warn(f"Could not find ur_description package: {e}")
-            return self._get_default_limits()
-
-        try:
-            with open(joint_limits_file, 'r') as f:
-                limits_data = yaml.safe_load(f)
-
-            joint_limits = {}
-            for joint_name in self._joint_names:
-                # Remove '_joint' suffix to match YAML keys
-                yaml_key = joint_name.replace('_joint', '').replace('_', '_')
-                if yaml_key == 'shoulder_pan':
-                    yaml_key = 'shoulder_pan'
-                elif yaml_key == 'shoulder_lift':
-                    yaml_key = 'shoulder_lift'
-                elif yaml_key == 'elbow':
-                    yaml_key = 'elbow_joint'
-                elif yaml_key.startswith('wrist'):
-                    yaml_key = yaml_key.replace('_', '_')
-
-                if yaml_key in limits_data['joint_limits']:
-                    limits = limits_data['joint_limits'][yaml_key]
-                    joint_limits[joint_name] = {
-                        'min_position': limits.get('min_position', math.radians(-360.0)),
-                        'max_position': limits.get('max_position', math.radians(360.0)),
-                        'max_velocity': limits.get('max_velocity', math.radians(180.0)),
-                        'max_effort': limits.get('max_effort', 150.0)
-                    }
-                else:
-                    self.node.get_logger().warn(f"Joint {joint_name} not found in limits file, using defaults")
-                    joint_limits[joint_name] = self._get_default_limits()[joint_name]
-
-            self.node.get_logger().info("Successfully loaded joint limits from YAML file")
-            return joint_limits
-
-        except Exception as e:
-            self.node.get_logger().warn(f"Failed to load joint limits from {joint_limits_file}: {e}")
-            return self._get_default_limits()
-
-    def _get_default_limits(self):
-        """Get default joint limits if YAML file is not available."""
-        return {
-            'shoulder_pan_joint': {
-                'min_position': np.radians(-360.0),
-                'max_position': np.radians(360.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 150.0
-            },
-            'shoulder_lift_joint': {
-                'min_position': np.radians(-360.0),
-                'max_position': np.radians(360.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 150.0
-            },
-            'elbow_joint': {
-                'min_position': np.radians(-180.0),
-                'max_position': np.radians(180.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 150.0
-            },
-            'wrist_1_joint': {
-                'min_position': np.radians(-360.0),
-                'max_position': np.radians(360.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 28.0
-            },
-            'wrist_2_joint': {
-                'min_position': np.radians(-360.0),
-                'max_position': np.radians(360.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 28.0
-            },
-            'wrist_3_joint': {
-                'min_position': np.radians(-360.0),
-                'max_position': np.radians(360.0),
-                'max_velocity': np.radians(180.0),
-                'max_effort': 28.0
-            }
-        }
-
     def set_joint_velocities(self, jnt_velocities):
         """
         Sets the joint velocities of the robot. The values are send directly to the robot.
@@ -361,6 +362,89 @@ class JointVelocityController(JointControllerBase):
     def stop_all_joints(self):
         """Stop all joint motion immediately."""
         self.set_joint_velocities([0.0] * 6)
+
+
+class JointEffortController(JointControllerBase):
+    """
+    Interface class to control the UR robot with direct joint torques through the UR driver's
+    C{forward_effort_controller} (a forward_command_controller on the C{effort} command interface).
+
+    Requires UR driver >= 3.5.0 and PolyScope >= 5.23.0 / 10.11.0 (it has no effect in URSim).
+    The robot applies its own gravity and friction compensation on top of the commanded torques,
+    so a zero command lets the arm float. ros2_control holds the last command until a new one
+    arrives, so commands must be streamed continuously (the robot runs at 500 Hz). As a safeguard,
+    if no command is received within C{command_timeout} seconds, zero torques are published.
+    """
+
+    def __init__(self, node, controller_name='forward_effort_controller', namespace='', timeout=5.0, joint_names=None,
+                 robot_version=None, command_timeout=0.1):
+        super(JointEffortController, self).__init__(node, namespace, timeout=timeout, joint_names=joint_names)
+        if not hasattr(self, '_joint_names'):
+            raise RuntimeError('JointEffortController timed out waiting joint_states topic: {0}'.format(namespace))
+
+        # ROS 2 forward_command_controller subscribes to <controller>/commands.
+        self.controller_name = controller_name
+        self.effort_pub = node.create_publisher(Float64MultiArray, self.ns + self.controller_name + '/commands', 1)
+
+        # Torque limits per joint, in the order of self._joint_names. The limits file and the
+        # defaults are keyed by unprefixed joint names.
+        joint_limits = self._load_joint_limits(robot_version.lower() if robot_version else None)
+        max_efforts = []
+        for joint_name in self._joint_names:
+            key = joint_name if joint_name in joint_limits else \
+                next(j for j in constants.JOINT_ORDER if joint_name.endswith(j))
+            max_efforts.append(joint_limits[key]['max_effort'])
+        self.max_efforts = np.array(max_efforts)
+
+        # Watchdog: zero the torques if the command stream stops (e.g. the user loop crashed).
+        self.command_timeout = command_timeout
+        self._command_lock = threading.Lock()
+        self._last_command_time = None
+        self._watchdog = None
+        if command_timeout:
+            self._watchdog = node.create_timer(command_timeout / 2.0, self._watchdog_cb)
+
+        self.node.get_logger().info('JointEffortController initialized. ns: {0}'.format(namespace))
+
+    def set_joint_efforts(self, jnt_efforts):
+        """
+        Sets the joint torques (Nm) of the robot, on top of the robot's gravity/friction compensation.
+        The values are clipped to the joint effort limits and sent directly to the robot.
+        @type jnt_efforts: list
+        @param jnt_efforts: Joint torques command.
+        """
+        if len(jnt_efforts) != self._num_joints:
+            self.node.get_logger().error("Effort command must have exactly %d values" % self._num_joints)
+            return
+
+        efforts = np.asarray(jnt_efforts, dtype=float)
+        clipped = np.clip(efforts, -self.max_efforts, self.max_efforts)
+        if not np.array_equal(clipped, efforts):
+            self.node.get_logger().warn("Joint efforts limited from {} to {} Nm".format(efforts, clipped),
+                                        throttle_duration_sec=1.0)
+
+        with self._command_lock:
+            self._publish(clipped)
+            self._last_command_time = time.monotonic()
+
+    def stop_all_joints(self):
+        """Command zero torques, i.e., leave only the robot's gravity/friction compensation."""
+        with self._command_lock:
+            self._publish(np.zeros(self._num_joints))
+            self._last_command_time = None
+
+    def _publish(self, efforts):
+        msg = Float64MultiArray()
+        msg.data = [float(e) for e in efforts]
+        self.effort_pub.publish(msg)
+
+    def _watchdog_cb(self):
+        with self._command_lock:
+            if self._last_command_time is None or (time.monotonic() - self._last_command_time) < self.command_timeout:
+                return
+            self._publish(np.zeros(self._num_joints))
+            self._last_command_time = None
+        self.node.get_logger().warn('No effort command received for %.3f s; commanding zero torques' % self.command_timeout)
 
 
 class JointTrajectoryController(JointControllerBase):

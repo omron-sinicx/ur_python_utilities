@@ -34,6 +34,12 @@ JOINT_STATE_SUBSCRIBER = 'joint_states'
 FT_SUBSCRIBER = 'wrench'
 
 VELOCITY_CONTROLLER_NAME = 'forward_velocity_controller'
+# Direct joint torque control (UR driver >= 3.5.0, PolyScope >= 5.23.0 / 10.11.0).
+# The robot applies gravity (and, by default, friction) compensation on top of the
+# commanded torques. friction_model_controller (driver >= 3.8.0, PolyScope >= 5.25.1 /
+# 10.12.1) tunes that friction compensation.
+EFFORT_CONTROLLER_NAME = 'forward_effort_controller'
+FRICTION_MODEL_CONTROLLER_NAME = 'friction_model_controller'
 
 # Set constants for joints
 SHOULDER_PAN_JOINT = 'shoulder_pan_joint'
