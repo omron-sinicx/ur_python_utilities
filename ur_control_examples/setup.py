@@ -22,6 +22,7 @@ setup(
             'joint_position_keyboard = ur_control_examples.joint_position_keyboard:main',
             'joint_position_mouse6d = ur_control_examples.joint_position_mouse6d:main',
             'controller_examples = ur_control_examples.controller_examples:main',
+            'torque_controller_examples = ur_control_examples.torque_controller_examples:main',
             'cartesian_compliance_controller_examples = ur_control_examples.cartesian_compliance_controller_examples:main',
             'ft_filter = ur_control_examples.ft_filter:main',
         ],
