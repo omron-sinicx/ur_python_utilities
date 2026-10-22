@@ -157,5 +157,16 @@ class EAIKKinematics(object):
             return None
 
         seed = np.zeros(self._num_joints) if seed is None else np.asarray(seed, dtype=float)
-        best = min(solutions, key=lambda q: np.linalg.norm(np.asarray(q) - seed))
-        return np.asarray(best, dtype=float)
+        # EAIK returns angles in [-pi, pi] but UR joints span [-2pi, 2pi]; shift each joint
+        # by multiples of 2pi to the equivalent angle closest to the seed before comparing,
+        # otherwise a different IK branch can look "closer" than the seed's own branch.
+        candidates = [self._unwrap_to_seed(np.asarray(q, dtype=float), seed) for q in solutions]
+        return min(candidates, key=lambda q: np.linalg.norm(q - seed))
+
+    @staticmethod
+    def _unwrap_to_seed(q: np.ndarray, seed: np.ndarray) -> np.ndarray:
+        q = q + 2 * np.pi * np.round((seed - q) / (2 * np.pi))
+        # Keep within the UR joint limits
+        q[q > 2 * np.pi] -= 2 * np.pi
+        q[q < -2 * np.pi] += 2 * np.pi
+        return q

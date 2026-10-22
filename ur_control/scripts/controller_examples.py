@@ -214,7 +214,7 @@ def main():
 
     global arm
     arm = Arm(gripper_type=None,
-              use_velocity_interface=True,
+              use_velocity_interface=False,
               robot_version="UR5e")
 
     arm.activate_joint_trajectory_controller()

@@ -33,6 +33,7 @@ import rospy
 
 from ur_control.arm import Arm
 from ur_control import transformations
+from ur_control.exceptions import InverseKinematicsException
 
 import getch
 
@@ -82,7 +83,31 @@ def map_keyboard():
             delta[dim] += delta_q * sign
 
         xc = transformations.transform_pose(x, delta, rotated_frame=relative_to_tcp)
-        arm.set_target_pose(pose=xc, target_time=0.25)
+
+        q_current = arm.joint_angles()
+        try:
+            q_target = arm.inverse_kinematics(xc, seed=q_current)
+        except InverseKinematicsException:
+            rospy.logwarn("IK solution not found. No motion sent to the robot.")
+            return
+
+        # A small Cartesian step should only need a small joint motion. A large one means IK
+        # jumped to another solution branch (or the robot is near a singularity or joint limit).
+        dq = q_target - q_current
+        if np.max(np.abs(dq)) > max_joint_step:
+            joint_names = arm.joint_traj_controller.valid_joint_names
+            print("Current joints:", np.round(q_current, 4).tolist())
+            print("IK solution:   ", np.round(q_target, 4).tolist())
+            print("Joint delta:   ", np.round(dq, 4).tolist())
+            print("Current pose:  ", np.round(x, 5).tolist())
+            print("Target pose:   ", np.round(xc, 5).tolist())
+            print("Cartesian delta:", np.round(delta, 5).tolist(), "relative to tcp:", relative_to_tcp)
+            rospy.logwarn("IK motion too large: %s would move %.3f rad (max allowed %.3f rad). "
+                          "No motion sent to the robot." % (joint_names[np.argmax(np.abs(dq))],
+                                                           np.max(np.abs(dq)), max_joint_step))
+            return
+
+        arm.set_joint_positions(positions=q_target, target_time=0.25)
 
     def open_gripper():
         arm.gripper.open()
@@ -189,6 +214,9 @@ See help inside the example with the '?' key for key bindings.
     parser.add_argument(
         '--tcp', type=str, help='Tool Center Point or End-Effector frame for IK without joint prefix', default='tool0'
     )
+    parser.add_argument(
+        '--max-joint-step', type=float, default=0.2,
+        help='Max joint change (rad) allowed for a single IK step; larger motions are not sent to the robot')
 
     args = parser.parse_args(rospy.myargv()[1:])
 
@@ -196,6 +224,9 @@ See help inside the example with the '?' key for key bindings.
 
     global relative_to_tcp
     relative_to_tcp = args.relative
+
+    global max_joint_step
+    max_joint_step = args.max_joint_step
 
     tcp_link = args.tcp
     joints_prefix = args.namespace + '_' if args.namespace else None
@@ -208,7 +239,7 @@ See help inside the example with the '?' key for key bindings.
 
     global arm
     arm = Arm(namespace=args.namespace,
-              gripper_type=None,
+              gripper_type=gripper,
               joint_names_prefix=joints_prefix,
               ee_link=tcp_link)
 
