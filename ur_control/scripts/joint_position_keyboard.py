@@ -48,11 +48,13 @@ def map_keyboard():
     def print_robot_state():
         print("Joint angles:", np.round(arm.joint_angles(), 4).tolist())
         print("EE Pose:", np.round(arm.end_effector(), 5).tolist())
-        print("EE Pose (euler):", np.round(arm.end_effector(rot_type="euler"), 5).tolist())
+        print("EE Pose (euler):", np.round(
+            arm.end_effector(rot_type="euler"), 5).tolist())
         if arm.gripper:
             print("Gripper angle:", np.round(arm.gripper.get_position(), 4))
             print("Gripper position:", np.round(arm.gripper.opening_width, 4))
-            print("Gripper percentage:", np.round(arm.gripper.get_opening_percentage(), 4))
+            print("Gripper percentage:", np.round(
+                arm.gripper.get_opening_percentage(), 4))
 
     def set_j(joint_name, sign):
         global delta_q
