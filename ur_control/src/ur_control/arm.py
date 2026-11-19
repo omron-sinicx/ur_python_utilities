@@ -51,7 +51,7 @@ class Arm(object):
 
     def __init__(self,
                  namespace: str = None,
-                 ik_solver: IKSolverType = IKSolverType.EAIK,
+                 ik_solver: IKSolverType = IKSolverType.TRAC_IK,
                  gripper_type: GripperType = GripperType.GENERIC,
                  ft_topic: str = None,
                  base_link: str = None,
